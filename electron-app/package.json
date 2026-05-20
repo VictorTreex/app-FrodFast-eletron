@@ -1,6 +1,6 @@
 {
   "name": "frodfast",
-  "version": "1.2.4",
+  "version": "1.2.6",
   "description": "FrodFast - Electron app for restaurant management",
   "main": "main.js",
   "homepage": "https://www.treexonline.online/",
@@ -29,8 +29,11 @@
     "electron-builder": "^26.8.1"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "date-fns": "^3.0.0",
     "electron-log": "^4.4.8",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "ws": "^8.20.1"
   },
   "build": {
     "appId": "com.frodfast.app",
@@ -41,6 +44,8 @@
     "files": [
       "main.js",
       "preload.js",
+      "printService.js",
+      "supabaseService.js",
       "node_modules/**/*",
       "package.json",
       "assets/**/*"

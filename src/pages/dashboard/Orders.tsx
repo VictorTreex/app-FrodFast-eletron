@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { ManualOrderDialog } from "@/components/orders/ManualOrderDialog";
 import { EditOpenTabDialog } from "@/components/orders/EditOpenTabDialog";
 import { printOrder, PrintItem } from "@/lib/printOrder";
+import { printOrder as printOrderElectron } from "@/utils/electronPrint";
 import { useEditing } from "@/contexts/EditingContext";
 
 type Period = "today" | "yesterday" | "7d" | "30d" | "custom";
@@ -153,6 +154,16 @@ const OrdersPage = () => {
 
   // Helper: dispara impressão de um pedido específico
   const doPrint = (order: Order, ordItems: OrderItem[]) => {
+    const isElectron = window.electronAPI !== undefined;
+    
+    if (isElectron) {
+      // Usar impressão do Electron (sem popup)
+      printOrderElectron(order.id, order.customer_name);
+      toast.success("Enviado para impressão");
+      return;
+    }
+    
+    // Usar impressão do web (com popup)
     const printItems: PrintItem[] = ordItems.map((i) => ({
       product_name: i.product_name,
       quantity: i.quantity,
@@ -193,8 +204,9 @@ const OrdersPage = () => {
           setHighlightIds((s) => new Set(s).add(o.id));
           setTimeout(() => setHighlightIds((s) => { const n = new Set(s); n.delete(o.id); return n; }), 4000);
           toast.success(`Novo pedido de ${o.customer_name}`);
-          // Auto-print
-          if (printSettings.auto_print && !printedIdsRef.current.has(o.id)) {
+          // Auto-print (apenas no web, no Electron o useRealtimeOrders cuida disso)
+          const isElectron = window.electronAPI !== undefined;
+          if (!isElectron && printSettings.auto_print && !printedIdsRef.current.has(o.id)) {
             printedIdsRef.current.add(o.id);
             // Aguarda items chegarem (best-effort)
             setTimeout(async () => {

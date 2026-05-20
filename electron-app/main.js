@@ -3,8 +3,14 @@ const path = require('path');
 const { exec } = require('child_process');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const { printOrder: printOrderService } = require('./printService');
+
+// Configurações do Supabase
+const SUPABASE_URL = 'https://kfujkvihymclesabqmsz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmdWprdmloeW1jbGVzYWJxbXN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MjAxNTU1NTU1NTV9.fake-key-for-development';
 
 let mainWindow;
+let printedIds = new Set();
 
 // Sistema de fila de impressão
 const printQueue = [];
@@ -15,8 +21,117 @@ const configPath = path.join(__dirname, 'printer-config.json');
 let printerConfig = {
   selectedPrinter: '',
   contentSelectors: ['.print-area', '.pedido', '.order-content', '.receipt', 'main'],
-  useSilentMode: true
+  useSilentMode: true,
+  printerType: 'thermal', // 'thermal' or 'normal'
+  autoPrint: true,
+  splitByCategory: false
 };
+
+// ========================= POLLING DE PEDIDOS (SEM WEBSOCKET) =========================
+
+let lastOrderCheck = null;
+let pollingInterval = null;
+
+async function checkForNewOrders() {
+  try {
+    console.log('� [POLLING] Verificando novos pedidos...');
+    
+    // Buscar pedidos recentes (últimos 5 minutos)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/orders?select=*&created_at=gte.${fiveMinutesAgo}&order=created_at.desc&limit=10`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const orders = await response.json();
+    
+    console.log(`� [POLLING] ${orders.length} pedidos encontrados nos últimos 5 minutos`);
+    
+    // Verificar cada pedido
+    for (const order of orders) {
+      // Verificar se já imprimiu este pedido
+      if (printedIds.has(order.id)) {
+        continue;
+      }
+      
+      console.log('📦 [POLLING] Novo pedido detectado:', order.id, order.customer_name);
+      
+      // Verificar se auto-print está ativado
+      if (!printerConfig.autoPrint) {
+        console.log('⏭️ [POLLING] Auto-print desativado, ignorando pedido');
+        continue;
+      }
+      
+      // Aguardar um momento para garantir que os itens foram inseridos
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Marcar como impresso para evitar duplicação
+      printedIds.add(order.id);
+      
+      // Buscar dados do pedido e gerar HTML
+      console.log('🖨️ [POLLING] Buscando dados para impressão...');
+      const html = await printOrderService(order.id, printerConfig.splitByCategory);
+      
+      if (!html) {
+        console.error('❌ [POLLING] Erro ao gerar HTML do pedido');
+        continue;
+      }
+      
+      console.log('✅ [POLLING] HTML gerado, enviando para fila de impressão...');
+      
+      // Adicionar à fila de impressão
+      const jobId = 'polling_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      const job = {
+        id: jobId,
+        data: { 
+          html, 
+          orderId: order.id, 
+          timestamp: new Date().toISOString(),
+          title: `Pedido #${order.id.slice(0, 8).toUpperCase()}`
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      printQueue.push(job);
+      console.log('📋 [POLLING] Job adicionado à fila:', jobId, 'Total:', printQueue.length);
+      
+      // Processar fila se não estiver ocupado
+      if (!isPrinting) {
+        processPrintQueue();
+      }
+    }
+    
+    lastOrderCheck = new Date();
+  } catch (error) {
+    console.error('❌ [POLLING] Erro ao verificar pedidos:', error);
+  }
+}
+
+function startOrderPolling() {
+  console.log('🔄 [POLLING] Iniciando polling de pedidos (intervalo: 10s)...');
+  
+  // Verificar imediatamente
+  checkForNewOrders();
+  
+  // Configurar polling a cada 10 segundos
+  pollingInterval = setInterval(checkForNewOrders, 10000);
+}
+
+function stopOrderPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    console.log('🛑 [POLLING] Polling de pedidos parado');
+  }
+}
 
 // ========================= CONFIG =========================
 
@@ -83,7 +198,12 @@ const getPrinters = async () => {
 
 // ========================= TEMPLATE =========================
 
-function createPrintTemplate(content, title = 'Documento') {
+function createPrintTemplate(content, title = 'Documento', printerType = 'thermal') {
+  const isThermal = printerType === 'thermal';
+  const width = isThermal ? '280px' : '100%';
+  const fontSize = isThermal ? '12px' : '12px';
+  const fontFamily = isThermal ? "'Courier New', monospace" : "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+  
   return `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -93,38 +213,171 @@ function createPrintTemplate(content, title = 'Documento') {
 <style>
 *{box-sizing:border-box;}
 body{
-font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
-font-size:12px;
+font-family:${fontFamily};
+font-size:${fontSize};
 line-height:1.4;
 color:#333;
 margin:0;
-padding:20px;
+padding:${isThermal ? '10px' : '20px'};
 background:white;
+width:${width};
 }
 table{width:100%;border-collapse:collapse;margin-bottom:15px;}
-table th,table td{border:1px solid #ddd;padding:8px;text-align:left;}
+${isThermal ? 'table th,table td{border:none;padding:4px 0;text-align:left;}' : 'table th,table td{border:1px solid #ddd;padding:8px;text-align:left;}'}
 img{max-width:100%;height:auto;}
-.header{text-align:center;margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid #333;}
-.footer{margin-top:20px;padding-top:10px;border-top:1px solid #ddd;text-align:center;font-size:10px;color:#666;}
+.header{text-align:center;margin-bottom:${isThermal ? '10px' : '20px'};padding-bottom:${isThermal ? '5px' : '10px'};border-bottom:${isThermal ? '1px dashed #000' : '2px solid #333'};}
+.footer{margin-top:${isThermal ? '10px' : '20px'};padding-top:${isThermal ? '5px' : '10px'};border-top:${isThermal ? '1px dashed #000' : '1px solid #ddd'};text-align:center;font-size:10px;color:#666;}
+${isThermal ? '.total{font-weight:bold;border-top:1px dashed #000;padding-top:5px;margin-top:10px;}' : ''}
 </style>
 </head>
 <body>
 <div class="header">
-<h1>${title}</h1>
-<div>${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</div>
+<h1 style="margin:0;font-size:${isThermal ? '16px' : '24px'};">${title}</h1>
+<div style="font-size:${isThermal ? '10px' : '12px'};">${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</div>
 </div>
 <div class="content">${content}</div>
-<div class="footer">Gerado via FrodFast Electron App</div>
+<div class="footer">Gerado via FrodFast</div>
 </body>
 </html>`;
 };
 
 // ========================= PRINT JOB =========================
 
+// Sistema anti-duplicação
+const printHistory = new Map();
+const PRINT_DEBOUNCE_MS = 2000;
+
+function generateContentHash(html) {
+  // Hash simples para detectar duplicatas
+  let hash = 0;
+  for (let i = 0; i < html.length; i++) {
+    const char = html.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(36);
+}
+
+function isDuplicatePrint(html) {
+  const hash = generateContentHash(html);
+  const now = Date.now();
+  
+  if (printHistory.has(hash)) {
+    const lastPrint = printHistory.get(hash);
+    if (now - lastPrint < PRINT_DEBOUNCE_MS) {
+      console.log('⚠️ [PRINT] Impressão duplicada detectada, ignorando');
+      return true;
+    }
+  }
+  
+  printHistory.set(hash, now);
+  // Limpar histórico antigo (manter apenas últimos 10 minutos)
+  for (const [key, timestamp] of printHistory.entries()) {
+    if (now - timestamp > 600000) {
+      printHistory.delete(key);
+    }
+  }
+  return false;
+}
+
+// Helper para aguardar renderização completa
+async function waitForPrintReady(printWindow) {
+  console.log('⏳ [PRINT] Aguardando renderização completa...');
+  
+  return new Promise((resolve) => {
+    let ready = false;
+    
+    const checkReady = () => {
+      if (ready) return;
+      ready = true;
+      console.log('✅ [PRINT] Renderização concluída');
+      resolve();
+    };
+    
+    // Aguardar eventos de carregamento
+    printWindow.webContents.on('did-finish-load', () => {
+      console.log('📄 [PRINT] Página carregada');
+    });
+    
+    printWindow.webContents.on('dom-ready', () => {
+      console.log('🎨 [PRINT] DOM pronto');
+    });
+    
+    // Verificar se fontes e imagens estão carregadas
+    printWindow.webContents.executeJavaScript(`
+      Promise.all([
+        document.fonts.ready,
+        new Promise((resolve) => {
+          const images = document.querySelectorAll('img');
+          if (images.length === 0) {
+            resolve();
+            return;
+          }
+          let loaded = 0;
+          images.forEach(img => {
+            if (img.complete) {
+              loaded++;
+            } else {
+              img.onload = () => {
+                loaded++;
+                if (loaded === images.length) resolve();
+              };
+              img.onerror = () => {
+                loaded++;
+                if (loaded === images.length) resolve();
+              };
+            }
+          });
+          if (loaded === images.length) resolve();
+        })
+      ]).then(() => true)
+    `).then(() => {
+      checkReady();
+    }).catch(() => {
+      // Fallback se executeJavaScript falhar
+      setTimeout(checkReady, 500);
+    });
+    
+    // Timeout de segurança (5 segundos máximo)
+    setTimeout(() => {
+      if (!ready) {
+        console.warn('⚠️ [PRINT] Timeout de renderização, prosseguindo mesmo assim');
+        checkReady();
+      }
+    }, 5000);
+  });
+}
+
+// Calcular pageSize baseado no tipo de impressora
+function calculatePageSize(printerType) {
+  if (printerType === 'thermal') {
+    // Impressora térmica: 80mm de largura, altura dinâmica
+    return {
+      width: 80000, // ~80mm
+      height: 200000 // altura máxima para pedidos grandes
+    };
+  } else {
+    // Impressora normal: A4
+    return {
+      width: 210000,
+      height: 297000
+    };
+  }
+}
+
 async function executePrintJob(job) {
   let selectedPrinter = '';
+  let printWindow = null;
 
   try {
+    console.log('🖨️ [PRINT] Iniciando job:', job.id);
+    
+    // Verificar duplicação
+    if (isDuplicatePrint(job.data.html)) {
+      console.log('⏭️ [PRINT] Job duplicado ignorado');
+      return true;
+    }
+    
     const printers = await getPrinters();
     selectedPrinter = printerConfig.selectedPrinter;
 
@@ -135,9 +388,9 @@ async function executePrintJob(job) {
     if (!selectedPrinter) throw new Error('Nenhuma impressora disponível');
 
     const htmlContent = job.data.html || '<p>Conteúdo não disponível</p>';
-    const printTemplate = createPrintTemplate(htmlContent, job.data.title || 'Documento');
+    const printTemplate = createPrintTemplate(htmlContent, job.data.title || 'Documento', printerConfig.printerType);
 
-    const printWindow = new BrowserWindow({
+    printWindow = new BrowserWindow({
       width: 800,
       height: 600,
       show: false,
@@ -151,27 +404,27 @@ async function executePrintJob(job) {
 
     const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(printTemplate)}`;
     await printWindow.loadURL(dataUrl);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Aguardar renderização completa em vez de setTimeout fixo
+    await waitForPrintReady(printWindow);
 
     const printOptions = {
-      silent: true,
+      silent: true, // SEMPRE silencioso - não pedir permissão
       printBackground: true,
       scaleFactor: 1,
       deviceName: selectedPrinter,
       copies: 1,
       marginsType: 0,
-      pageSize: {
-        width: 80000,
-        height: 200000
-      },
+      pageSize: calculatePageSize(printerConfig.printerType),
       landscape: false
     };
 
+    console.log('🖨️ [PRINT] Enviando para impressora:', selectedPrinter);
+
     return new Promise((resolve, reject) => {
       printWindow.webContents.print(printOptions, (success, errorType) => {
-        printWindow.destroy();
-
         if (success) {
+          console.log('✅ [PRINT] Impressão concluída com sucesso');
           if (mainWindow) {
             mainWindow.webContents.send('print-success', {
               jobId: job.id,
@@ -181,12 +434,14 @@ async function executePrintJob(job) {
           }
           resolve(true);
         } else {
+          console.error('❌ [PRINT] Erro na impressão:', errorType);
           reject(new Error(errorType || 'Erro desconhecido'));
         }
       });
     });
 
   } catch (error) {
+    console.error('❌ [PRINT] Erro no job:', error.message);
     if (mainWindow) {
       mainWindow.webContents.send('print-error', {
         jobId: job.id,
@@ -196,27 +451,39 @@ async function executePrintJob(job) {
       });
     }
     throw error;
+  } finally {
+    // Sempre destruir a janela para evitar memory leak
+    if (printWindow && !printWindow.isDestroyed()) {
+      console.log('🗑️ [PRINT] Destruindo janela de impressão');
+      printWindow.destroy();
+    }
   }
 }
 
 async function processPrintQueue() {
   if (isPrinting || printQueue.length === 0) return;
 
+  console.log('📋 [QUEUE] Processando fila, jobs:', printQueue.length);
   isPrinting = true;
 
-  while (printQueue.length > 0) {
-    const job = printQueue.shift();
+  try {
+    while (printQueue.length > 0) {
+      const job = printQueue.shift();
+      console.log('📋 [QUEUE] Processando job:', job.id);
 
-    try {
-      await executePrintJob(job);
-    } catch (error) {
-      console.error('❌ [QUEUE] Erro:', error.message);
+      try {
+        await executePrintJob(job);
+      } catch (error) {
+        console.error('❌ [QUEUE] Erro no job:', job.id, error.message);
+      }
+
+      // Pequeno delay entre impressões para evitar sobrecarga
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  } finally {
+    isPrinting = false;
+    console.log('✅ [QUEUE] Fila processada');
   }
-
-  isPrinting = false;
 }
 
 // ========================= WINDOW =========================
@@ -244,109 +511,16 @@ function createWindow() {
 
   mainWindow.loadURL('https://www.treexonline.online/');
 
-  // Injetar script de interceptação de impressão quando a página carregar
-  mainWindow.webContents.once('did-finish-load', () => {
-    console.log('🖨️ [MAIN] Injetando script de interceptação de impressão...');
-    
-    const interceptionScript = `
-      // ========================= INTERCEPTAÇÃO DE IMPRESSÃO =========================
-      
-      // Sobrescrever window.print() para interceptar
-      const originalPrint = window.print;
-      window.print = function() {
-        console.log('🖨️ [INTERCEPT] window.print() interceptado');
-        
-        // Tentar capturar apenas o pedido, fallback para página inteira
-        const orderElement = document.querySelector('.pedido, .order, .receipt, .cupom, [data-order-id]');
-        const html = orderElement ? orderElement.outerHTML : document.documentElement.outerHTML;
-        
-        // Enviar para impressão silenciosa do Electron
-        if (window.electronAPI && window.electronAPI.printOrder) {
-          window.electronAPI.printOrder(html, 'intercepted_print_' + Date.now());
-        } else if (window.electronAutoPrint) {
-          window.electronAutoPrint(html);
-        } else {
-          console.error('❌ [INTERCEPT] API de impressão não disponível');
-        }
-        
-        return false; // Bloquear comportamento original
-      };
-      
-      // Interceptar eventos de impressão
-      window.addEventListener('beforeprint', (e) => {
-        console.log('🖨️ [INTERCEPT] Evento beforeprint interceptado');
-        e.preventDefault();
-        e.stopPropagation();
-        
-        // Tentar capturar apenas o pedido, fallback para página inteira
-        const orderElement = document.querySelector('.pedido, .order, .receipt, .cupom, [data-order-id]');
-        const html = orderElement ? orderElement.outerHTML : document.documentElement.outerHTML;
-        
-        if (window.electronAPI && window.electronAPI.printOrder) {
-          window.electronAPI.printOrder(html, 'beforeprint_' + Date.now());
-        }
-      });
-      
-      // Interceptar clicks em botões de impressão
-      document.addEventListener('click', (e) => {
-        const target = e.target;
-        const text = target.textContent?.toLowerCase() || '';
-        const className = target.className?.toLowerCase() || '';
-        
-        // Verificar se é botão de impressão
-        if (
-          text.includes('imprimir') || 
-          text.includes('print') ||
-          className.includes('print') ||
-          className.includes('imprimir') ||
-          target.onclick?.toString().includes('print') ||
-          target.getAttribute('onclick')?.includes('print')
-        ) {
-          console.log('🖨️ [INTERCEPT] Botão de impressão interceptado:', text, className);
-          e.preventDefault();
-          e.stopPropagation();
-          
-          // Capturar HTML do pedido (procurar por elementos específicos)
-          const orderElement = target.closest('.pedido, .order, .receipt, .cupom, [data-order-id]');
-          const html = orderElement ? orderElement.outerHTML : document.documentElement.outerHTML;
-          
-          if (window.electronAPI && window.electronAPI.printOrder) {
-            window.electronAPI.printOrder(html, 'button_print_' + Date.now());
-          } else if (window.electronAutoPrint) {
-            window.electronAutoPrint(html);
-          }
-        }
-      }, true);
-      
-      // Interceptar listeners de impressão existentes
-      const originalAddEventListener = EventTarget.prototype.addEventListener;
-      EventTarget.prototype.addEventListener = function(type, listener, options) {
-        if (type === 'print' || type === 'beforeprint') {
-          console.log('🖨️ [INTERCEPT] addEventListener de impressão interceptado:', type);
-          return; // Bloquear registro
-        }
-        return originalAddEventListener.call(this, type, listener, options);
-      };
-      
-      console.log('✅ [INTERCEPT] Sistema de interceptação de impressão ativado');
-    `;
-    
-    mainWindow.webContents.executeJavaScript(interceptionScript)
-      .then(() => {
-        console.log('✅ [MAIN] Script de interceptação injetado com sucesso');
-      })
-      .catch(err => {
-        console.error('❌ [MAIN] Erro ao injetar script:', err);
-      });
-  });
+  // Iniciar polling de pedidos (sem WebSocket)
+  startOrderPolling();
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // DevTools apenas em ambiente de desenvolvimento
-    if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
-      mainWindow.webContents.openDevTools();
-    }
+    // DevTools sempre aberto em modo detach para debugging
+    mainWindow.webContents.openDevTools({
+      mode: 'detach'
+    });
   });
 }
 
@@ -361,71 +535,6 @@ ipcMain.handle('get-printers', async () => {
     return { success: false, error: error.message };
   }
 });
-
-// ========================= SISTEMA DE IMPRESSÃO CENTRALIZADO =========================
-
-function createPrintJobWindow(htmlContent) {
-  return new Promise((resolve, reject) => {
-    console.log('🖨️ [PRINT] Criando janela de impressão...');
-    
-    const printWindow = new BrowserWindow({
-      width: 800,
-      height: 600,
-      show: false,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
-        offscreen: true
-      }
-    });
-    
-    // Template de cupom fiscal
-    const cupomTemplate = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>FrodFast - Cupom</title>
-        <style>
-          body { 
-            font-family: 'Courier New', monospace; 
-            margin: 0; 
-            padding: 10px; 
-            width: 280px;
-            font-size: 12px;
-          }
-          .header { text-align: center; font-weight: bold; margin-bottom: 10px; }
-          .items { margin: 10px 0; }
-          .item { display: flex; justify-content: space-between; margin: 2px 0; }
-          .total { font-weight: bold; border-top: 1px dashed #000; padding-top: 5px; }
-          .footer { text-align: center; margin-top: 10px; font-size: 10px; }
-        </style>
-      </head>
-      <body>
-        ${htmlContent}
-      </body>
-      </html>
-    `;
-    
-    const dataUrl = `data:text/html;charset=UTF-8,${encodeURIComponent(cupomTemplate)}`;
-    
-    printWindow.loadURL(dataUrl)
-      .then(() => {
-        console.log('🖨️ [PRINT] Janela carregada, aguardando render...');
-        
-        // Aguardar renderização completa
-        setTimeout(() => {
-          resolve(printWindow);
-        }, 1000);
-      })
-      .catch(err => {
-        console.error('❌ [PRINT] Erro ao carregar janela:', err);
-        reject(err);
-      });
-  });
-}
-
-
 
 ipcMain.handle('print-order', async (event, { html, orderId, timestamp }) => {
   console.log('🖨️ [PRINT] print-order recebido:', { 
@@ -443,7 +552,7 @@ ipcMain.handle('print-order', async (event, { html, orderId, timestamp }) => {
   };
   
   printQueue.push(job);
-  console.log('🖨️ [QUEUE] Job adicionado à fila:', jobId, 'Total:', printQueue.length);
+  console.log('� [QUEUE] Job adicionado à fila:', jobId, 'Total:', printQueue.length);
   
   // Processar fila se não estiver ocupado
   if (!isPrinting) {
@@ -460,16 +569,16 @@ ipcMain.handle('print-order', async (event, { html, orderId, timestamp }) => {
 });
 
 ipcMain.handle('set-printer', async (event, printerName) => {
-  console.log('⚙️ [CONFIG] Configurando impressora:', printerName);
+  console.log('⚙️ [PRINTER] Configurando impressora:', printerName);
   
   const printers = await getPrinters();
   if (printerName && printers.includes(printerName)) {
     printerConfig.selectedPrinter = printerName;
     savePrinterConfig();
-    console.log('✅ [CONFIG] Impressora configurada com sucesso');
+    console.log('✅ [PRINTER] Impressora configurada com sucesso');
     return { success: true, printer: printerName };
   } else {
-    console.error('❌ [CONFIG] Impressora não encontrada:', printerName);
+    console.error('❌ [PRINTER] Impressora não encontrada:', printerName);
     return { success: false, error: 'Impressora não encontrada', availablePrinters: printers };
   }
 });
@@ -497,11 +606,40 @@ ipcMain.handle('set-silent-mode', async (event, useSilent) => {
   return { success: true, useSilent: printerConfig.useSilentMode };
 });
 
+ipcMain.handle('set-printer-type', async (event, printerType) => {
+  console.log('⚙️ [CONFIG] Configurando tipo de impressora:', printerType);
+  
+  if (printerType === 'thermal' || printerType === 'normal') {
+    printerConfig.printerType = printerType;
+    savePrinterConfig();
+    console.log('✅ [CONFIG] Tipo de impressora configurado com sucesso');
+    return { success: true, printerType: printerConfig.printerType };
+  } else {
+    console.error('❌ [CONFIG] Tipo de impressora inválido:', printerType);
+    return { success: false, error: 'Tipo de impressora inválido. Use "thermal" ou "normal".' };
+  }
+});
+
 ipcMain.handle('get-printer-config', async () => {
   const printers = await getPrinters();
   return {
     config: printerConfig,
     availablePrinters: printers,
+    queueStatus: {
+      length: printQueue.length,
+      isPrinting: isPrinting
+    }
+  };
+});
+
+ipcMain.handle('health-check', async () => {
+  console.log('🏥 [MAIN] Health check solicitado');
+  const printers = await getPrinters();
+  return {
+    loaded: true,
+    timestamp: new Date().toISOString(),
+    version: '1.2.4',
+    printerReady: printers.length > 0,
     queueStatus: {
       length: printQueue.length,
       isPrinting: isPrinting

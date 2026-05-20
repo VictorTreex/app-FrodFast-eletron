@@ -222,7 +222,7 @@ const itemsHtml = items
 </section>`;
 }
 
-function buildHtml({
+export function buildHtml({
   restaurantName,
   order,
   items,
