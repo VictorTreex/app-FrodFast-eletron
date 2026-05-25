@@ -2,7 +2,7 @@
 
   "name": "frodfast",
 
-  "version": "1.2.7",
+  "version": "1.3.2",
 
   "description": "FrodFast - Electron app for restaurant management",
 
@@ -94,7 +94,7 @@
 
       "printService.js",
 
-      "supabaseService.js",
+      "config.js",
 
       "node_modules/**/*",
 

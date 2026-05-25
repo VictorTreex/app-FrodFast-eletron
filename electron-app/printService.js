@@ -132,6 +132,7 @@ function buildHtml({ restaurantName, order, items, splitByCategory }) {
 <title>Pedido #${order.id.slice(0, 8)}</title>
 <style>
 @page {
+  size: 80mm auto;
   margin: 0;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }

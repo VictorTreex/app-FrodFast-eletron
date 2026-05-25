@@ -487,7 +487,9 @@ async function executePrintJob(job) {
     const isThermal = printerConfig.printerType === 'thermal';
     const winWidth = isThermal ? 302 : 794;
 
-    // Janela visivel garante que o Chromium renderiza o conteudo completamente.
+    // Janela visivel fora da tela: Chromium renderiza completamente sem aparecer para o usuario.
+    // height alto evita que o viewport corte o conteudo antes da medicao do scrollHeight.
+    // deviceScaleFactor:1 fixa 96 DPI independente da escala do Windows (125%, 150%...).
     printWindow = new BrowserWindow({
       show: true,
       frame: false,
@@ -495,19 +497,19 @@ async function executePrintJob(job) {
       alwaysOnTop: false,
       focusable: false,
       width: winWidth,
-      height: 600,
-      x: 0,
+      height: 4000,
+      x: -(winWidth + 20),
       y: 0,
-      webPreferences: { sandbox: false },
+      webPreferences: { sandbox: false, deviceScaleFactor: 1 },
     });
 
     tempHtmlPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.html`);
     fs.writeFileSync(tempHtmlPath, html, 'utf-8');
     await printWindow.loadFile(tempHtmlPath);
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1500));
 
     const scrollH = await printWindow.webContents
-      .executeJavaScript('document.body.scrollHeight')
+      .executeJavaScript('Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)')
       .catch(() => 0);
     console.log('[PRINT] scrollHeight:', scrollH, 'px');
 
@@ -515,31 +517,35 @@ async function executePrintJob(job) {
 
     if (isThermal) {
       // -------------------------------------------------------
-      // TERMICA: printToPDF (dimensoes exatas) + pdf-to-printer
-      // webContents.print() nao consegue passar o tamanho de
-      // pagina correto para drivers termicos no Windows.
-      // pdf-to-printer usa SumatraPDF internamente e imprime
-      // silenciosamente com as dimensoes certas.
+      // TERMICA: webContents.print() com pageSize calculado.
+      // Envia direto ao driver Windows — sem SumatraPDF no meio.
+      // SumatraPDF escalava o conteudo para o tamanho de papel
+      // configurado no driver (ex: 80x70mm), cortando o ticket.
+      // Com webContents.print() o Chromium usa as dimensoes
+      // exatas que calculamos, igual ao que o browser faz.
       // -------------------------------------------------------
-      const heightMicrons = Math.ceil(scrollH * (25400 / 96)) + 10000; // +10mm folga
-      console.log('[PRINT] Gerando PDF:', (80000/1000).toFixed(0), 'mm x', (heightMicrons/1000).toFixed(0), 'mm');
+      const heightMicrons = Math.ceil(scrollH * (25400 / 96)) + 25000; // +25mm folga
+      console.log('[PRINT] Imprimindo termica:', (80000/1000).toFixed(0), 'mm x', (heightMicrons/1000).toFixed(0), 'mm');
 
-      const pdfBuffer = await printWindow.webContents.printToPDF({
-        printBackground: true,
-        pageSize: { width: 80000, height: heightMicrons },
-        margins: { marginType: 'none' },
+      return await new Promise((resolve, reject) => {
+        printWindow.webContents.print({
+          silent: true,
+          printBackground: true,
+          deviceName: selectedPrinter,
+          pageSize: { width: 80000, height: heightMicrons },
+          margins: { marginType: 'none' },
+          scaleFactor: 100,
+          copies: 1,
+        }, (success, errorType) => {
+          console.log('[PRINT] Callback termica:', { success, errorType });
+          if (success) {
+            if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
+            resolve(true);
+          } else {
+            reject(new Error(errorType || 'Falha na impressao termica'));
+          }
+        });
       });
-
-      tempPdfPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.pdf`);
-      fs.writeFileSync(tempPdfPath, pdfBuffer);
-      console.log('[PRINT] PDF gerado:', pdfBuffer.length, 'bytes ->', tempPdfPath);
-
-      const { print: printPdf } = require('pdf-to-printer');
-      await printPdf(tempPdfPath, { printer: selectedPrinter, silent: true });
-      console.log('[PRINT] PDF enviado para impressora com sucesso');
-
-      if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
-      return true;
 
     } else {
       // -------------------------------------------------------
@@ -1128,7 +1134,8 @@ app.whenReady().then(() => {
 
   
 
-  // Verificação recorrente automática a cada 60 segundos
+  // Verificação recorrente automática a cada 1 hora
+  // (60s causava rate limit na API pública do GitHub: 60 req/h)
 
   setInterval(() => {
 
@@ -1136,7 +1143,7 @@ app.whenReady().then(() => {
 
     autoUpdater.checkForUpdates();
 
-  }, 60000); // 60 segundos
+  }, 60 * 60 * 1000); // 1 hora
 
 });
 
