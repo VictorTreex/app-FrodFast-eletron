@@ -245,7 +245,25 @@ export default function WhatsAppPage() {
     `[cole aqui o link do seu cardápio]\n\n` +
     `Ficamos à disposição para qualquer dúvida!`;
 
-  const loadAutoMessage = async () => {
+  // Sincroniza a mensagem do Supabase para o banco do backend do bot
+  const syncToBackend = async (
+    text: string,
+    hours: number,
+    active: boolean
+  ): Promise<boolean> => {
+    if (!user || !text.trim()) return false;
+    try {
+      await whatsappApi.saveConfig(user.id, text, hours, active);
+      debugLog('✅ Mensagem sincronizada com backend do bot');
+      return true;
+    } catch (err: any) {
+      debugLog('⚠️ Falha na sincronização com backend', { error: err?.message });
+      return false;
+    }
+  };
+
+  // skipSync evita dupla sincronização quando já foi feita explicitamente antes
+  const loadAutoMessage = async (skipSync = false) => {
     if (!user) return;
     const { data } = await supabase
       .from("whatsapp_auto_messages" as any)
@@ -254,12 +272,20 @@ export default function WhatsAppPage() {
       .maybeSingle();
 
     if (data) {
+      const msgText    = (data as any).message_text || '';
+      const msgHours   = (data as any).cooldown_hours?.toString() || '24';
+      const msgActive  = (data as any).is_active ?? true;
+
       setAutoMessage(data as unknown as AutoMessage);
-      setMessageText((data as any).message_text || '');
-      setCooldownHours((data as any).cooldown_hours?.toString() || '24');
-      setIsActive((data as any).is_active);
+      setMessageText(msgText);
+      setCooldownHours(msgHours);
+      setIsActive(msgActive);
+
+      // Sincronizar com o banco do bot em background (não bloqueia a UI)
+      if (!skipSync && msgText.trim()) {
+        syncToBackend(msgText, parseInt(msgHours), msgActive);
+      }
     } else {
-      // Pré-preenche com mensagem padrão quando o usuário ainda não configurou
       setMessageText(DEFAULT_MESSAGE);
     }
   };
@@ -423,6 +449,7 @@ export default function WhatsAppPage() {
 
     setSaving(true);
     try {
+      // 1. Salvar no Supabase (banco principal do sistema)
       const { error } = await supabase
         .from("whatsapp_auto_messages" as any)
         .upsert({
@@ -433,15 +460,25 @@ export default function WhatsAppPage() {
         }, {
           onConflict: 'store_id'
         });
-      
+
       if (error) {
         console.error('Erro ao salvar:', error);
         toast.error("Erro ao salvar: " + error.message);
         return;
       }
-      
-      toast.success("Configuração salva com sucesso!");
-      await loadAutoMessage();
+
+      // 2. Sincronizar com o banco do backend do bot
+      const synced = await syncToBackend(messageText, parseInt(cooldownHours), isActive);
+
+      if (synced) {
+        toast.success("Mensagem salva e sincronizada com o bot! ✅");
+      } else {
+        toast.success("Mensagem salva no sistema.");
+        toast.warning("Não foi possível sincronizar com o bot agora. Tente recarregar a página.");
+      }
+
+      // Recarregar estado sem re-sincronizar (já feito acima)
+      await loadAutoMessage(true);
     } catch (error: any) {
       toast.error("Erro ao salvar: " + (error.message || "Tente novamente"));
     } finally {
