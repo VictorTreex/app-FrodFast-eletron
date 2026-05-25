@@ -1,9 +1,7 @@
 const { format } = require('date-fns');
 const { ptBR } = require('date-fns/locale');
 
-// Configurações do Supabase
-const SUPABASE_URL = 'https://kfujkvihymclesabqmsz.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmdWprdmloeW1jbGVzYWJxbXN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MjAxNTU1NTU1NTV9.fake-key-for-development';
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = require('./config');
 
 // ========================= GERAÇÃO DE HTML (COPIADO DO WEB) =========================
 
@@ -103,7 +101,7 @@ function ticketSection({
   <div class="hr"></div>
   <div class="bold center">ITENS</div>
   <div class="hr dashed"></div>
-  <pre class="items">${itemsHtml}</pre>
+  <div class="items">${itemsHtml}</div>
   <div class="hr dashed"></div>
 
   ${!categoryHeader ? `<div class="row total"><span class="bold">TOTAL</span><span class="bold">${fmt(order.total_amount)}</span></div>` : ""}
@@ -185,11 +183,30 @@ function buildHtml({
 <meta charset="utf-8" />
 <title>Pedido #${order.id.slice(0, 8)}</title>
 <style>
-  @page { size: 80mm auto; margin: 4mm; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-  body { font-family: 'Courier New', ui-monospace, monospace; font-size: 12px; line-height: 1.35; }
-  .ticket { width: 72mm; padding: 2mm 0; }
+  @page {
+    margin: 0;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    width: 80mm;
+    background: white;
+    color: black;
+  }
+  body {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .ticket {
+    width: 100%;
+    padding: 4mm;
+    box-sizing: border-box;
+  }
   .center { text-align: center; }
   .bold { font-weight: 700; }
   .big { font-size: 14px; }
@@ -205,16 +222,11 @@ function buildHtml({
   .row.hi .lbl, .row.hi .val { color: #fff; }
   .row.total { font-size: 14px; margin-top: 6px; }
   .banner { text-align: center; font-weight: 700; padding: 4px 0; border: 2px solid #000; margin: 6px 0; font-size: 13px; }
-  pre.items { font-family: inherit; font-size: 12px; white-space: pre-wrap; margin: 0; }
+  .items { font-family: inherit; font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
   .cut { margin: 8px 0 4px; border-top: 1px dashed #000; height: 6px; }
   @media screen {
     body { padding: 16px; background: #f3f3f3; }
     .ticket { background: #fff; border: 1px solid #ddd; padding: 10mm 6mm; margin: 0 auto 16px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
-  }
-  @media print {
-    body { padding: 0; background: #fff; }
-    .ticket { page-break-after: always; }
-    .ticket:last-child { page-break-after: auto; }
   }
 </style>
 </head>

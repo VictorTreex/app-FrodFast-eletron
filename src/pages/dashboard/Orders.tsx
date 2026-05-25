@@ -154,42 +154,38 @@ const OrdersPage = () => {
 
   // Helper: dispara impressão de um pedido específico
   const doPrint = (order: Order, ordItems: OrderItem[]) => {
-    const isElectron = window.electronAPI !== undefined;
-    
-    if (isElectron) {
-      // Usar impressão do Electron (sem popup)
+    if (window.electronAPI !== undefined) {
       printOrderElectron(order.id, order.customer_name);
-      toast.success("Enviado para impressão");
-      return;
+    } else {
+      printOrder({
+        restaurantName: printSettings.restaurant_name || 'Restaurante',
+        order: {
+          id: order.id,
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone,
+          customer_address: order.customer_address,
+          total_amount: Number(order.total_amount),
+          notes: order.notes,
+          created_at: order.created_at,
+          order_type: (order as any).order_type || 'delivery',
+          is_scheduled: (order as any).is_scheduled || false,
+          is_manual: (order as any).is_manual || false,
+          scheduled_for: (order as any).scheduled_for || null,
+          table_number: (order as any).table_number || null,
+        },
+        items: ordItems.map((item) => ({
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price: Number(item.unit_price),
+          subtotal: Number(item.subtotal),
+          category_name: item.category_name || null,
+          notes: item.notes || null,
+          addons: item.addons ?? undefined,
+        })),
+        splitByCategory: printSettings.print_split_by_category,
+      });
     }
-    
-    // Usar impressão do web (com popup)
-    const printItems: PrintItem[] = ordItems.map((i) => ({
-      product_name: i.product_name,
-      quantity: i.quantity,
-      unit_price: Number(i.unit_price),
-      subtotal: Number(i.subtotal),
-      category_name: (i as any).category_name || null,
-    }));
-    const ok = printOrder({
-      restaurantName: printSettings.restaurant_name || "Restaurante",
-      order: {
-        id: order.id,
-        customer_name: order.customer_name,
-        customer_phone: order.customer_phone,
-        customer_address: order.customer_address,
-        total_amount: Number(order.total_amount),
-        notes: order.notes,
-        created_at: order.created_at,
-        order_type: (order as any).order_type,
-        is_scheduled: !!(order as any).is_scheduled,
-        is_manual: !!(order as any).is_manual,
-        scheduled_for: (order as any).scheduled_for,
-      },
-      items: printItems,
-      splitByCategory: printSettings.print_split_by_category,
-    });
-    if (!ok) toast.error("Permita pop-ups para imprimir.");
+    toast.success("Enviado para impressão");
   };
 
   // Realtime
@@ -333,76 +329,39 @@ const OrdersPage = () => {
   };
 
   const handlePrintOrder = (order: Order) => {
-    console.log("🖨️ Botão IMPRIMIR clicado - Iniciando impressão do pedido:", order.id);
-    
-    // Função segura para parse JSON
-    const safeParse = (data: any) => {
-      if (typeof data === "string") {
-        try {
-          return JSON.parse(data);
-        } catch {
-          return data;
-        }
-      }
-      return data;
-    };
-    
-    // Obter itens do pedido
-    const orderItems = items.filter(item => item.order_id === order.id);
-    console.log("📋 Itens do pedido encontrados:", orderItems.length);
-    
-    // Converter para formato PrintItem
-    const printItems: PrintItem[] = orderItems.map(item => ({
-      product_name: item.product_name,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      subtotal: item.subtotal,
-      category_name: item.category_name,
-      notes: item.notes || null,
-      addons: item.addons ? safeParse(item.addons) : undefined
-    }));
-    console.log("🔄 Itens convertidos para PrintItem:", printItems);
-
-    // Obter configurações de impressão
-    const settings = printSettings.menu_id === order.menu_id ? printSettings : {
-      auto_print: false,
-      print_split_by_category: false,
-      menu_id: order.menu_id,
-      restaurant_name: "Pedido"
-    };
-    console.log("⚙️ Configurações de impressão:", settings);
-
-    // Chamar função de impressão
-    console.log("🚀 Chamando função printOrder...");
-    const success = printOrder({
-      restaurantName: settings.restaurant_name,
-      order: {
-        id: order.id,
-        customer_name: order.customer_name,
-        customer_phone: order.customer_phone,
-        customer_address: order.customer_address,
-        total_amount: order.total_amount,
-        notes: order.notes,
-        created_at: order.created_at,
-        order_type: "delivery", // Valor padrão pois não existe na interface Order
-        is_manual: false,       // Valor padrão pois não existe na interface Order
-        is_scheduled: false,    // Valor padrão pois não existe na interface Order
-        scheduled_for: null,    // Valor padrão pois não existe na interface Order
-        table_number: (order as any).table_number || null
-      },
-      items: printItems,
-      splitByCategory: settings.print_split_by_category
-    });
-
-    console.log("✅ Resultado da função printOrder:", success);
-
-    if (!success) {
-      console.error("❌ Falha ao abrir janela de impressão");
-      toast.error("Falha ao abrir janela de impressão. Verifique se os popups estão permitidos.");
+    if (window.electronAPI !== undefined) {
+      printOrderElectron(order.id, order.customer_name);
     } else {
-      console.log("🎉 Impressão iniciada com sucesso");
-      toast.success("Abrindo impressão...");
+      const ordItems = itemsOf(order.id);
+      printOrder({
+        restaurantName: printSettings.restaurant_name || 'Restaurante',
+        order: {
+          id: order.id,
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone,
+          customer_address: order.customer_address,
+          total_amount: Number(order.total_amount),
+          notes: order.notes,
+          created_at: order.created_at,
+          order_type: (order as any).order_type || 'delivery',
+          is_scheduled: (order as any).is_scheduled || false,
+          is_manual: (order as any).is_manual || false,
+          scheduled_for: (order as any).scheduled_for || null,
+          table_number: (order as any).table_number || null,
+        },
+        items: ordItems.map((item) => ({
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price: Number(item.unit_price),
+          subtotal: Number(item.subtotal),
+          category_name: item.category_name || null,
+          notes: item.notes || null,
+          addons: item.addons ?? undefined,
+        })),
+        splitByCategory: printSettings.print_split_by_category,
+      });
     }
+    toast.success("Enviado para impressão");
   };
 
   return (

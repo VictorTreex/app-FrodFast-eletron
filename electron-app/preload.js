@@ -54,18 +54,6 @@ try {
       }
     },
 
-    setContentSelectors: async (selectors) => {
-      console.log('⚙️ [PRINT] Configurando seletores:', selectors);
-      try {
-        const result = await ipcRenderer.invoke('set-content-selectors', selectors);
-        console.log('✅ [PRINT] Seletores configurados');
-        return result;
-      } catch (error) {
-        console.error('❌ [PRINT] Erro ao configurar seletores:', error.message);
-        return { success: false, error: error.message };
-      }
-    },
-
     setSilentMode: async (enabled) => {
       console.log('⚙️ [PRINT] Configurando modo silencioso:', enabled);
       try {

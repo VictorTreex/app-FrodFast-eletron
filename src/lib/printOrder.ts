@@ -152,7 +152,7 @@ const itemsHtml = items
   <div class="hr"></div>
   <div class="bold center">ITENS</div>
   <div class="hr dashed"></div>
-  <pre class="items">${itemsHtml}</pre>
+  <div class="items">${itemsHtml}</div>
   <div class="hr dashed"></div>
 
   ${!categoryHeader ? `<div class="row total"><span class="bold">TOTAL</span><span class="bold">${fmt(order.total_amount)}</span></div>` : ""}
@@ -257,48 +257,122 @@ export function buildHtml({
 <meta charset="utf-8" />
 <title>Pedido #${order.id.slice(0, 8)}</title>
 <style>
-  @page { size: 80mm auto; margin: 4mm; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-  body { font-family: 'Courier New', ui-monospace, monospace; font-size: 12px; line-height: 1.35; }
-  .ticket { width: 72mm; padding: 2mm 0; }
+  @media print {
+    @page {
+      margin: 0;
+      size: 80mm auto;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+  }
+
+  body {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .ticket {
+    width: 100%;
+    padding: 4mm;
+    box-sizing: border-box;
+  }
+
   .center { text-align: center; }
   .bold { font-weight: 700; }
   .big { font-size: 14px; }
   .small { font-size: 11px; }
-  .hr { border-top: 1px solid #000; margin: 4px 0; }
-  .hr.dashed { border-top: 1px dashed #000; }
-  .row { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; }
-  .row.stack { flex-direction: column; }
-  .row .lbl { color: #000; min-width: 48px; }
-  .row .val { text-align: right; flex: 1; word-break: break-word; }
-  .row.stack .val { text-align: left; }
-  .row.hi { background: #000; color: #fff; padding: 2px 4px; border-radius: 2px; }
-  .row.hi .lbl, .row.hi .val { color: #fff; }
-  .row.total { font-size: 14px; margin-top: 6px; }
-  .banner { text-align: center; font-weight: 700; padding: 4px 0; border: 2px solid #000; margin: 6px 0; font-size: 13px; }
-  pre.items { font-family: inherit; font-size: 12px; white-space: pre-wrap; margin: 0; }
-  .cut { margin: 8px 0 4px; border-top: 1px dashed #000; height: 6px; }
-  @media screen {
-    body { padding: 16px; background: #f3f3f3; }
-    .ticket { background: #fff; border: 1px solid #ddd; padding: 10mm 6mm; margin: 0 auto 16px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+
+  .hr {
+    border-top: 1px solid #000;
+    margin: 4px 0;
   }
+
+  .hr.dashed {
+    border-top: 1px dashed #000;
+  }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 2px 0;
+  }
+
+  .row.stack {
+    flex-direction: column;
+  }
+
+  .row .lbl {
+    min-width: 48px;
+  }
+
+  .row .val {
+    text-align: right;
+    flex: 1;
+    word-break: break-word;
+  }
+
+  .row.stack .val {
+    text-align: left;
+  }
+
+  .row.hi {
+    background: #000;
+    color: #fff;
+    padding: 2px 4px;
+  }
+
+  .row.total {
+    font-size: 14px;
+    margin-top: 6px;
+  }
+
+  .banner {
+    text-align: center;
+    font-weight: 700;
+    padding: 4px 0;
+    border: 2px solid #000;
+    margin: 6px 0;
+    font-size: 13px;
+  }
+
+  .items {
+    font-family: inherit;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .cut {
+    margin-top: 8px;
+    border-top: 1px dashed #000;
+    height: 6px;
+  }
+
   @media print {
-    body { padding: 0; background: #fff; }
-    .ticket { page-break-after: always; }
-    .ticket:last-child { page-break-after: auto; }
+    html,
+    body {
+      width: 80mm;
+      margin: 0;
+      padding: 0;
+    }
   }
 </style>
 </head>
 <body>
 ${sections}
-<script>
-  window.addEventListener('load', function() {
-    setTimeout(function() {
-      try { window.print(); } catch (e) {}
-    }, 250);
-  });
-</script>
 </body>
 </html>`;
 }
@@ -322,9 +396,9 @@ export function printOrder(params: {
   
   console.log("📄 HTML gerado, tamanho:", html.length, "caracteres");
   
-  // Tentar abrir nova janela
+  // Tentar abrir nova janela sem dimensões fixas para evitar viewport desktop inadequada
   console.log("🪟 Tentando abrir nova janela...");
-  const w = window.open("", "_blank", "width=420,height=720");
+  const w = window.open("", "_blank");
   
   if (!w) {
     console.error("❌ window.open retornou null - popup bloqueado");
@@ -341,25 +415,30 @@ export function printOrder(params: {
   w.document.close();
   console.log("✅ HTML escrito e documento fechado");
   
-  // Aguardar carregamento e focar antes de imprimir
-  console.log("⏰ Aguardando 300ms para carregar...");
-  setTimeout(() => {
-    try {
-      console.log("🎯 Focando janela e iniciando impressão...");
-      w.focus();
-      w.print();
-      console.log("🖨️ w.print() executado com sucesso");
-      
-      // Opcional: fechar janela após impressão
-      setTimeout(() => {
-        console.log("🔒 Fechando janela...");
-        w.close();
-      }, 1000);
-    } catch (error) {
-      console.error("❌ Erro ao imprimir:", error);
-      alert("Erro ao imprimir. Tente novamente.");
-    }
-  }, 300);
+  // Aguardar renderização completa do DOM antes de imprimir
+  console.log("⏰ Aguardando renderização completa do DOM...");
+  w.addEventListener('load', () => {
+    // Usar requestAnimationFrame duplo para garantir que o layout foi calculado
+    w.requestAnimationFrame(() => {
+      w.requestAnimationFrame(() => {
+        try {
+          console.log("🎯 Iniciando impressão...");
+          w.focus();
+          w.print();
+          console.log("🖨️ w.print() executado com sucesso");
+          
+          // Fechar janela após impressão
+          setTimeout(() => {
+            console.log("🔒 Fechando janela...");
+            w.close();
+          }, 1000);
+        } catch (error) {
+          console.error("❌ Erro ao imprimir:", error);
+          alert("Erro ao imprimir. Tente novamente.");
+        }
+      });
+    });
+  });
   
   console.log("🚀 Função printOrder concluída, retornando true");
   return true;

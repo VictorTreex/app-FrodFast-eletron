@@ -95,9 +95,12 @@ export function useRealtimeOrders({
             user_id: newOrder.user_id
           });
 
-          // Disparar impressão automática se estiver no Electron
-          console.log('📡 [REALTIME] 🖨️ Verificando impressão automática...');
-          printOrder(newOrder.id, newOrder.customer_name || undefined);
+          // Auto-impressão no Electron: envia para fila silenciosa do main process
+          // O main.js marca o orderId como impresso via IPC para que o polling não duplique
+          if (typeof window !== 'undefined' && window.electronAPI) {
+            console.log('📡 [REALTIME] 🖨️ Enviando para impressão automática no Electron...');
+            printOrder(newOrder.id, newOrder.customer_name || undefined);
+          }
 
           // Tocar som de notificação e mostrar toast
           console.log('📡 [REALTIME] 🔔 Tocando som de notificação...');

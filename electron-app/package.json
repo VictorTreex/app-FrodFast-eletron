@@ -1,94 +1,188 @@
 {
+
   "name": "frodfast",
-  "version": "1.2.6",
+
+  "version": "1.2.7",
+
   "description": "FrodFast - Electron app for restaurant management",
+
   "main": "main.js",
+
   "homepage": "https://www.treexonline.online/",
+
   "scripts": {
+
     "start": "electron .",
+
     "dev": "electron . --dev",
+
     "build": "electron-builder --publish never",
+
     "dist": "npm run build",
+
     "publish": "electron-builder --publish always",
+
     "release": "npm run publish"
+
   },
+
   "keywords": [
+
     "electron",
+
     "app",
+
     "restaurant",
+
     "menu",
+
     "frodfast"
+
   ],
+
   "author": {
+
     "name": "VictorTreex",
+
     "email": "support@treexonline.online"
+
   },
+
   "license": "MIT",
+
   "devDependencies": {
+
     "electron": "^28.0.0",
+
     "electron-builder": "^26.8.1"
+
   },
+
   "dependencies": {
+
     "@supabase/supabase-js": "^2.39.0",
+
     "date-fns": "^3.0.0",
+
     "electron-log": "^4.4.8",
+
     "electron-updater": "^6.3.9",
+
     "ws": "^8.20.1"
+
   },
+
   "build": {
+
     "appId": "com.frodfast.app",
+
     "productName": "FrodFast",
+
     "directories": {
+
       "output": "dist"
+
     },
+
     "files": [
+
       "main.js",
+
       "preload.js",
+
       "printService.js",
+
       "supabaseService.js",
+
       "node_modules/**/*",
+
       "package.json",
+
       "assets/**/*"
+
     ],
+
     "win": {
+
       "target": [
+
         {
+
           "target": "nsis",
+
           "arch": [
+
             "x64"
+
           ]
+
         },
+
         {
+
           "target": "zip",
+
           "arch": [
+
             "x64"
+
           ]
+
         }
+
       ],
+
       "artifactName": "FrodFast-${version}.${ext}",
+
       "verifyUpdateCodeSignature": false,
+
       "forceCodeSigning": false,
+
       "icon": "assets/icon.png"
+
     },
+
     "nsis": {
+
       "oneClick": false,
+
       "allowToChangeInstallationDirectory": true,
+
       "createDesktopShortcut": true,
+
       "createStartMenuShortcut": true,
+
       "shortcutName": "FrodFast"
+
     },
+
     "publish": [
+
       {
+
         "provider": "github",
+
         "owner": "VictorTreex",
+
         "repo": "app-FrodFast-eletron"
+
       }
+
     ],
+
     "compression": "store",
+
     "generateUpdatesFilesForAllChannels": true
+
   },
+
   "repository": {
+
     "type": "git",
+
     "url": "https://github.com/VictorTreex/app-FrodFast-eletron.git"
+
   }
+
 }
+

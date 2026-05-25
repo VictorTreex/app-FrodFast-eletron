@@ -20,7 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   AddonGroup, CartItem, CartItemAddon, makeCartKey, itemSubtotal, itemUnitTotal, cartSubtotal,
 } from "@/lib/cart";
-import { printOrder } from "@/lib/printOrder";
+import { printOrder } from "@/utils/electronPrint";
 
 interface Props {
   open: boolean;
@@ -349,28 +349,7 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
       toast.success(isTable ? "Comanda aberta!" : "Pedido manual criado!");
 
       if (autoPrint) {
-        printOrder({
-          restaurantName,
-          order: {
-            id: order.id,
-            customer_name: finalCustomerName,
-            customer_phone: customerPhone.trim() || null,
-            customer_address: customerAddress,
-            total_amount: totalAmount,
-            notes: notes.trim() || null,
-            created_at: (order as any).created_at,
-            order_type: orderType,
-            is_manual: true,
-          },
-          items: items.map((i) => ({
-            product_name: i.product_name,
-            quantity: i.quantity,
-            unit_price: i.unit_price,
-            subtotal: i.subtotal,
-            category_name: i.category_name,
-          })),
-          splitByCategory,
-        });
+        printOrder(order.id, finalCustomerName);
       }
 
       onCreated?.();
