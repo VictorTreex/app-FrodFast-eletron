@@ -23,6 +23,6 @@ export const CHECKOUT_STEPS = {
   PIX_GENERATED: 'pix_generated'
 } as const;
 
-export const PIX_EXPIRY_MINUTES = 30;
+export const PIX_EXPIRY_MINUTES = 20;
 export const POLLING_INTERVAL_MS = 5000;
 export const POLLING_DELAY_MS = 2000;

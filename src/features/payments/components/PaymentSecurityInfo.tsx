@@ -1,31 +1,21 @@
 import React from 'react';
-import { Shield, Check } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Shield, Lock, RotateCcw } from 'lucide-react';
 
 export const PaymentSecurityInfo: React.FC = () => {
   return (
-    <Card className="bg-white/[0.03] border-white/10 backdrop-blur-xl rounded-3xl">
-      <CardHeader>
-        <CardTitle className="text-xl lg:text-2xl">
-          <Shield className="h-5 w-5 mr-2" />
-          Pagamento Seguro
-        </CardTitle>
-      </CardHeader>
-
-      <CardContent className="space-y-3">
-        <div className="flex items-center gap-3">
-          <Check className="h-5 w-5 text-green-400" />
-          <span>Criptografia SSL de ponta a ponta</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <Check className="h-5 w-5 text-green-400" />
-          <span>Dados protegidos por lei</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <Check className="h-5 w-5 text-green-400" />
-          <span>Cancelamento quando quiser</span>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 py-1 text-[11px] text-zinc-600">
+      <span className="flex items-center gap-1.5">
+        <Shield className="h-3.5 w-3.5 text-green-600" />
+        Criptografia SSL
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Lock className="h-3.5 w-3.5 text-green-600" />
+        Dados protegidos por lei
+      </span>
+      <span className="flex items-center gap-1.5">
+        <RotateCcw className="h-3.5 w-3.5 text-green-600" />
+        Cancele quando quiser
+      </span>
+    </div>
   );
 };

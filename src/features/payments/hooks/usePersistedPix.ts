@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PaymentResponse, CheckoutPersistence } from '@/services/paymentService';
+import { PIX_EXPIRY_MINUTES } from '../constants/payment.constants';
 import QRCode from 'qrcode';
 
 interface CustomerData {
@@ -60,8 +61,8 @@ export const usePersistedPix = (selectedPlan: any, paymentMethod: 'pix' | 'credi
         CheckoutPersistence.save({ generatedPix: undefined });
       }
     } else {
-      // PIX de outro plano ou inválido - limpar para não confundir
-      if (savedState.generatedPix) {
+      // Só limpa se o plano já foi inicializado (evita limpar durante o carregamento inicial)
+      if (savedState.generatedPix && selectedPlan != null) {
         CheckoutPersistence.save({ generatedPix: undefined });
       }
     }
@@ -156,7 +157,7 @@ export const usePersistedPix = (selectedPlan: any, paymentMethod: 'pix' | 'credi
         amount: paymentResponse.amount,
         plan_id: planId,
         status: 'pending',
-        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + PIX_EXPIRY_MINUTES * 60 * 1000).toISOString(),
         created_at: new Date().toISOString()
       },
       currentStep: 'pix_generated'

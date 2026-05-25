@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 
 const path = require('path');
 
@@ -443,383 +443,161 @@ const getPrinters = async () => {
 
 // ========================= PRINT JOB =========================
 
-
-
-// Sistema anti-duplicação
-
 const printHistory = new Map();
 
-const PRINT_DEBOUNCE_MS = 2000;
-
-
-
-function generateContentHash(html) {
-
-  // Hash simples para detectar duplicatas
-
-  let hash = 0;
-
-  for (let i = 0; i < html.length; i++) {
-
-    const char = html.charCodeAt(i);
-
-    hash = ((hash << 5) - hash) + char;
-
-    hash = hash & hash;
-
-  }
-
-  return hash.toString(36);
-
-}
-
-
-
 function isDuplicatePrint(html) {
-
-  const hash = generateContentHash(html);
-
+  let hash = 0;
+  for (let i = 0; i < html.length; i++) {
+    hash = (Math.imul(31, hash) + html.charCodeAt(i)) | 0;
+  }
+  const key = hash.toString(36);
   const now = Date.now();
-
-  
-
-  if (printHistory.has(hash)) {
-
-    const lastPrint = printHistory.get(hash);
-
-    if (now - lastPrint < PRINT_DEBOUNCE_MS) {
-
-      console.log('⚠️ [PRINT] Impressão duplicada detectada, ignorando');
-
-      return true;
-
-    }
-
+  if (printHistory.has(key) && now - printHistory.get(key) < 3000) {
+    console.log('[PRINT] Job duplicado detectado, ignorando');
+    return true;
   }
-
-  
-
-  printHistory.set(hash, now);
-
-  // Limpar histórico antigo (manter apenas últimos 10 minutos)
-
-  for (const [key, timestamp] of printHistory.entries()) {
-
-    if (now - timestamp > 600000) {
-
-      printHistory.delete(key);
-
-    }
-
+  printHistory.set(key, now);
+  for (const [k, ts] of printHistory) {
+    if (now - ts > 60000) printHistory.delete(k);
   }
-
   return false;
-
 }
-
-
-
-// Helper para aguardar renderização completa
-// loadFile() já aguarda did-finish-load, então só precisamos
-// de um delay para o CSS layout ser calculado.
-// requestAnimationFrame NÃO dispara em janelas ocultas (show:false),
-// por isso usamos setTimeout simples.
-
-async function waitForPrintReady(printWindow) {
-  // Medir altura real do conteúdo para diagnóstico
-  try {
-    const height = await printWindow.webContents.executeJavaScript(
-      'document.body ? document.body.scrollHeight : 0'
-    );
-    console.log('📐 [PRINT] Altura do conteúdo (screen):', height, 'px');
-    if (height < 10) {
-      console.warn('⚠️ [PRINT] Conteúdo com altura suspeita! HTML pode não ter carregado.');
-    }
-  } catch (e) {
-    console.warn('⚠️ [PRINT] Não foi possível medir altura:', e.message);
-  }
-
-  // 600ms é suficiente para CSS layout após did-finish-load
-  await new Promise(resolve => setTimeout(resolve, 600));
-  console.log('✅ [PRINT] Página pronta para impressão');
-}
-
-
-
 
 async function executePrintJob(job) {
-
-  let selectedPrinter = '';
-
   let printWindow = null;
-
-  let tempFilePath = null;
-
-
+  let tempHtmlPath = null;
+  let tempPdfPath = null;
 
   try {
+    console.log('[PRINT] Iniciando job:', job.id);
 
-    console.log('🖨️ [PRINT] Iniciando job:', job.id);
-    console.log('📋 [PRINT] Dados completos do job:', JSON.stringify(job, null, 2));
-    console.log('📄 [PRINT] HTML length:', job.data.html?.length);
-    console.log('🆔 [PRINT] Order ID:', job.data.orderId);
-    console.log('⏰ [PRINT] Timestamp:', job.data.timestamp);
-    console.log('📝 [PRINT] Primeiros 500 chars do HTML:', job.data.html?.substring(0, 500));
-
-    
-
-    // Verificar duplicação (apenas se não for reimpressão explícita)
     if (!job.data.forcePrint && isDuplicatePrint(job.data.html)) {
-
-      console.log('⏭️ [PRINT] Job duplicado ignorado');
-
       return true;
-
     }
-
-    
 
     const printers = await getPrinters();
-
-    selectedPrinter = printerConfig.selectedPrinter;
-
-
-
+    let selectedPrinter = printerConfig.selectedPrinter;
     if (!selectedPrinter || !printers.includes(selectedPrinter)) {
-
-      selectedPrinter = printers.length > 0 ? printers[0] : '';
-
+      selectedPrinter = printers[0] || '';
     }
+    console.log('[PRINT] Impressora:', selectedPrinter);
+    if (!selectedPrinter) throw new Error('Nenhuma impressora disponivel');
 
+    const html = job.data.html;
+    const isThermal = printerConfig.printerType === 'thermal';
+    const winWidth = isThermal ? 302 : 794;
 
-
-    if (!selectedPrinter) throw new Error('Nenhuma impressora disponível');
-
-
-
-    const htmlContent = job.data.html || '<p>Conteúdo não disponível</p>';
-
-
-
-    // Largura da janela compatível com o tipo de impressora (px ≈ mm * 96/25.4)
-    const winWidth = printerConfig.printerType === 'thermal' ? 302 : 794;
-
+    // Janela visivel garante que o Chromium renderiza o conteudo completamente.
     printWindow = new BrowserWindow({
-
-      show: false,
+      show: true,
+      frame: false,
+      skipTaskbar: true,
+      alwaysOnTop: false,
+      focusable: false,
       width: winWidth,
-      height: 1200,
-      webPreferences: {
-
-        sandbox: false
-
-      }
-
+      height: 600,
+      x: 0,
+      y: 0,
+      webPreferences: { sandbox: false },
     });
 
+    tempHtmlPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.html`);
+    fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+    await printWindow.loadFile(tempHtmlPath);
+    await new Promise((r) => setTimeout(r, 1000));
 
+    const scrollH = await printWindow.webContents
+      .executeJavaScript('document.body.scrollHeight')
+      .catch(() => 0);
+    console.log('[PRINT] scrollHeight:', scrollH, 'px');
 
-    // Criar arquivo temporário para impressão
-    tempFilePath = path.join(app.getPath('temp'), `print-${Date.now()}.html`);
-    fs.writeFileSync(tempFilePath, htmlContent, 'utf-8');
+    if (scrollH < 50) throw new Error(`Conteudo nao renderizou (scrollHeight=${scrollH}px)`);
 
-    await printWindow.loadFile(tempFilePath);
+    if (isThermal) {
+      // -------------------------------------------------------
+      // TERMICA: printToPDF (dimensoes exatas) + pdf-to-printer
+      // webContents.print() nao consegue passar o tamanho de
+      // pagina correto para drivers termicos no Windows.
+      // pdf-to-printer usa SumatraPDF internamente e imprime
+      // silenciosamente com as dimensoes certas.
+      // -------------------------------------------------------
+      const heightMicrons = Math.ceil(scrollH * (25400 / 96)) + 10000; // +10mm folga
+      console.log('[PRINT] Gerando PDF:', (80000/1000).toFixed(0), 'mm x', (heightMicrons/1000).toFixed(0), 'mm');
 
-    // Aguardar renderização completa do DOM
-    await waitForPrintReady(printWindow);
-
-
-
-    // Para impressora térmica: NÃO enviar pageSize.
-    // O driver Windows já sabe o tamanho do rolo (configurado em Propriedades da Impressora).
-    // Enviar pageSize customizado em microns faz o driver usar o tamanho mínimo → tira.
-    // Para impressora normal (A4): usar string 'A4' que todos os drivers entendem.
-    const printOptions = {
-      silent: printerConfig.useSilentMode,
-      printBackground: true,
-      deviceName: selectedPrinter,
-      copies: 1,
-      landscape: false,
-      margins: { marginType: 'none' },
-      scaleFactor: 100,
-      ...(printerConfig.printerType === 'normal' ? { pageSize: 'A4' } : {})
-    };
-
-    console.log('🖨️ [PRINT] Enviando para impressora:', selectedPrinter, '| tipo:', printerConfig.printerType);
-
-
-
-    return new Promise((resolve, reject) => {
-
-      console.log('🚀 [PRINT] Chamando webContents.print');
-
-      
-
-      printWindow.webContents.print(printOptions, (success, errorType) => {
-
-        console.log('📨 [PRINT CALLBACK]', { success, errorType });
-
-        // Limpar arquivo temporário após callback do print (spooler já leu o arquivo)
-        if (tempFilePath && fs.existsSync(tempFilePath)) {
-          try {
-            fs.unlinkSync(tempFilePath);
-            console.log('🗑️ [PRINT] Arquivo temporário removido');
-          } catch (err) {
-            console.warn('⚠️ [PRINT] Erro ao remover arquivo temporário:', err.message);
-          }
-        }
-
-        if (success) {
-
-          console.log('✅ [PRINT] Impressão concluída com sucesso');
-
-          if (mainWindow) {
-
-            mainWindow.webContents.send('print-success', {
-
-              jobId: job.id,
-
-              printer: selectedPrinter,
-
-              timestamp: new Date().toISOString()
-
-            });
-
-          }
-
-          resolve(true);
-
-        } else {
-
-          console.error('❌ [PRINT] Erro na impressão:', errorType);
-
-          reject(new Error(errorType || 'Erro desconhecido'));
-
-        }
-
+      const pdfBuffer = await printWindow.webContents.printToPDF({
+        printBackground: true,
+        pageSize: { width: 80000, height: heightMicrons },
+        margins: { marginType: 'none' },
       });
 
-    });
+      tempPdfPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.pdf`);
+      fs.writeFileSync(tempPdfPath, pdfBuffer);
+      console.log('[PRINT] PDF gerado:', pdfBuffer.length, 'bytes ->', tempPdfPath);
 
+      const { print: printPdf } = require('pdf-to-printer');
+      await printPdf(tempPdfPath, { printer: selectedPrinter, silent: true });
+      console.log('[PRINT] PDF enviado para impressora com sucesso');
 
+      if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
+      return true;
+
+    } else {
+      // -------------------------------------------------------
+      // NORMAL (A4): webContents.print() funciona bem
+      // -------------------------------------------------------
+      return await new Promise((resolve, reject) => {
+        printWindow.webContents.print({
+          silent: printerConfig.useSilentMode,
+          printBackground: true,
+          deviceName: selectedPrinter,
+          copies: 1,
+          landscape: false,
+          pageSize: 'A4',
+          margins: { marginType: 'none' },
+          scaleFactor: 100,
+        }, (success, errorType) => {
+          console.log('[PRINT] Callback A4:', { success, errorType });
+          if (success) {
+            if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
+            resolve(true);
+          } else {
+            reject(new Error(errorType || 'Falha na impressao'));
+          }
+        });
+      });
+    }
 
   } catch (error) {
-
-    console.error('❌ [PRINT] Erro no job:', error.message);
-
-    if (mainWindow) {
-
-      mainWindow.webContents.send('print-error', {
-
-        jobId: job.id,
-
-        error: error.message,
-
-        printer: selectedPrinter,
-
-        timestamp: new Date().toISOString()
-
-      });
-
-    }
-
+    console.error('[PRINT] Erro:', error.message);
+    if (mainWindow) mainWindow.webContents.send('print-error', { jobId: job.id, error: error.message });
     throw error;
-
   } finally {
-
-    // Destruir janela após tempo suficiente para o spooler ler o arquivo
-    setTimeout(() => {
-
-      if (printWindow && !printWindow.isDestroyed()) {
-
-        console.log('🗑️ [PRINT] Destruindo janela');
-
-        printWindow.destroy();
-
-      }
-
-    }, 8000);
-
+    if (tempHtmlPath) try { fs.unlinkSync(tempHtmlPath); } catch {}
+    if (tempPdfPath) setTimeout(() => { try { fs.unlinkSync(tempPdfPath); } catch {} }, 8000);
+    if (printWindow) setTimeout(() => { if (!printWindow.isDestroyed()) printWindow.destroy(); }, 3000);
   }
-
 }
 
-
-
 async function processPrintQueue() {
-
-  console.log('📋 [QUEUE] processPrintQueue chamado:', { 
-
-    isPrinting, 
-
-    queueLength: printQueue.length 
-
-  });
-
-  
-
-  if (isPrinting) {
-
-    console.log('📋 [QUEUE] Já está imprimindo, job aguardará na fila');
-
-    return;
-
-  }
-
-  
-
-  if (printQueue.length === 0) {
-
-    console.log('📋 [QUEUE] Fila vazia, nada para processar');
-
-    return;
-
-  }
-
-
-
-  console.log('📋 [QUEUE] Processando fila, jobs:', printQueue.length);
+  if (isPrinting || printQueue.length === 0) return;
 
   isPrinting = true;
-
-
+  console.log('[QUEUE] Processando', printQueue.length, 'job(s)');
 
   try {
-
     while (printQueue.length > 0) {
-
       const job = printQueue.shift();
-
-      console.log('📋 [QUEUE] Processando job:', job.id);
-
-
-
       try {
-
         await executePrintJob(job);
-
-      } catch (error) {
-
-        console.error('❌ [QUEUE] Erro no job:', job.id, error.message);
-
+      } catch (err) {
+        console.error('[QUEUE] Erro no job:', job.id, err.message);
       }
-
-
-
-      // Pequeno delay entre impressões para evitar sobrecarga
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-
+      await new Promise((r) => setTimeout(r, 500));
     }
-
   } finally {
-
     isPrinting = false;
-
-    console.log('✅ [QUEUE] Fila processada, isPrinting resetado para false');
-
+    console.log('[QUEUE] Fila processada');
   }
-
 }
 
 
@@ -870,7 +648,7 @@ function createWindow() {
 
 
 
-  mainWindow.loadURL('http://localhost:8081/');
+  mainWindow.loadURL('http://localhost:8080/');
 
 
 
@@ -884,6 +662,14 @@ function createWindow() {
 
     mainWindow.show();
 
+  });
+
+  // F12 abre DevTools para visualizar logs de impressao
+  const { globalShortcut } = require('electron');
+  globalShortcut.register('F12', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.toggleDevTools();
+    }
   });
 
 }

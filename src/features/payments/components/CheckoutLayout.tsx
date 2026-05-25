@@ -30,47 +30,55 @@ export const CheckoutLayout: React.FC<CheckoutLayoutProps> = ({
           </div>
         </div>
       )}
-      
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-[-200px] left-[-100px] w-[500px] h-[500px] bg-purple-700/20 blur-3xl rounded-full animate-pulse" />
-        <div className="absolute bottom-[-200px] right-[-100px] w-[500px] h-[500px] bg-orange-500/10 blur-3xl rounded-full animate-pulse" />
+
+      {/* Background decorations */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-200px] left-[-100px] w-[500px] h-[500px] bg-purple-700/20 blur-3xl rounded-full" />
+        <div className="absolute bottom-[-200px] right-[-100px] w-[500px] h-[500px] bg-orange-500/10 blur-3xl rounded-full" />
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
-            backgroundImage:
-              'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)',
             backgroundSize: '20px 20px'
           }}
         />
       </div>
 
-      <div className="relative z-10">
-        <div className="container mx-auto px-4 py-6">
-          <Button
-            variant="ghost"
-            onClick={onBack}
-            className="mb-6"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar
-          </Button>
+      <div className="relative z-10 min-h-screen flex flex-col">
+        <div className="container mx-auto px-4 max-w-6xl w-full flex-1 flex flex-col py-6 pb-16">
 
+          {/* Top nav */}
+          <div className="flex items-center justify-between mb-8">
+            <Button
+              variant="ghost"
+              onClick={onBack}
+              className="text-zinc-400 hover:text-white hover:bg-white/5 gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Voltar
+            </Button>
+            <span className="text-xs text-zinc-600 font-medium tracking-widest uppercase">
+              TreexMenu
+            </span>
+          </div>
+
+          {/* Title block */}
           {(title || subtitle) && (
-            <div className="text-center mb-8">
+            <div className="text-center mb-10">
               {title && (
-                <h1 className="text-3xl lg:text-4xl font-bold mb-4">
+                <h1 className="text-3xl lg:text-4xl font-bold mb-3">
                   {title}
                 </h1>
               )}
               {subtitle && (
-                <p className="text-zinc-400">{subtitle}</p>
+                <p className="text-zinc-400 max-w-md mx-auto text-sm lg:text-base">{subtitle}</p>
               )}
             </div>
           )}
+
+          {children}
         </div>
       </div>
-
-      {children}
     </div>
   );
 };

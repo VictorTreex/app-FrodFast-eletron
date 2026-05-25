@@ -68,6 +68,8 @@
 
     "electron-updater": "^6.3.9",
 
+    "pdf-to-printer": "^5.8.0",
+
     "ws": "^8.20.1"
 
   },

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { paymentService, PaymentResponse, Plan, CheckoutPersistence } from '@/services/paymentService';
+import { PIX_EXPIRY_MINUTES } from '../constants/payment.constants';
 import { useAuth } from '@/contexts/AuthContext';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
@@ -122,7 +123,7 @@ export const usePixPayment = (selectedPlan: Plan | null, onSavePixPayment?: (pay
               amount: paymentResponse.amount,
               plan_id: selectedPlan.id,
               status: paymentResponse.status === 'paid' ? 'paid' : 'pending',
-              expires_at: paymentResponse.expires_at || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+              expires_at: new Date(Date.now() + PIX_EXPIRY_MINUTES * 60 * 1000).toISOString(),
               created_at: new Date().toISOString()
             },
             currentStep: 'payment_generated'
