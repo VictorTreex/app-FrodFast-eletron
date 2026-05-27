@@ -131,16 +131,11 @@ function buildHtml({ restaurantName, order, items, splitByCategory }) {
 <meta charset="utf-8">
 <title>Pedido #${order.id.slice(0, 8)}</title>
 <style>
-@page {
-  size: 80mm auto;
-  margin: 0;
-}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
   width: 80mm;
   background: #fff;
   color: #000;
-  /* overflow:visible garante que scrollHeight meça o conteúdo real */
   overflow: visible;
 }
 body {

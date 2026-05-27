@@ -443,56 +443,21 @@ const getPrinters = async () => {
 
 // ========================= PRINT JOB =========================
 
-const printHistory = new Map();
-
-function isDuplicatePrint(html) {
-  let hash = 0;
-  for (let i = 0; i < html.length; i++) {
-    hash = (Math.imul(31, hash) + html.charCodeAt(i)) | 0;
-  }
-  const key = hash.toString(36);
-  const now = Date.now();
-  if (printHistory.has(key) && now - printHistory.get(key) < 3000) {
-    console.log('[PRINT] Job duplicado detectado, ignorando');
-    return true;
-  }
-  printHistory.set(key, now);
-  for (const [k, ts] of printHistory) {
-    if (now - ts > 60000) printHistory.delete(k);
-  }
-  return false;
-}
-
 async function executePrintJob(job) {
   let printWindow = null;
   let tempHtmlPath = null;
+  let tempPdfPath = null;
 
   try {
     console.log('[PRINT] Iniciando job:', job.id);
-
-    if (!job.data.forcePrint && isDuplicatePrint(job.data.html)) {
-      return true;
-    }
-
     const html = job.data.html;
-    const isThermal = printerConfig.printerType === 'thermal';
-    // 302px = 80mm a 96dpi; 794px = A4 a 96dpi
-    const winWidth = isThermal ? 302 : 794;
 
-    // Janela de renderização fora da tela.
-    // X positivo grande (10000) evita problemas de composição que ocorrem em X negativo
-    // em algumas configs de GPU/Windows. deviceScaleFactor:1 fixa 96dpi independente
-    // da escala do Windows (125%, 150%...) para que scrollHeight seja sempre em px@96dpi.
+    // Janela oculta — 302px = 80mm a 96dpi; deviceScaleFactor:1 garante
+    // medição consistente independente da escala do Windows (125%, 150%...)
     printWindow = new BrowserWindow({
-      show: true,
-      frame: false,
-      skipTaskbar: true,
-      alwaysOnTop: false,
-      focusable: false,
-      width: winWidth,
-      height: 4000,
-      x: 10000,
-      y: 0,
+      show: false,
+      width: 302,
+      height: 1200,
       webPreferences: { sandbox: false, deviceScaleFactor: 1 },
     });
 
@@ -500,59 +465,66 @@ async function executePrintJob(job) {
     fs.writeFileSync(tempHtmlPath, html, 'utf-8');
     await printWindow.loadFile(tempHtmlPath);
 
-    // Aguardar fontes e layout finalizarem
-    await printWindow.webContents.executeJavaScript(
-      'document.fonts.ready.then(() => true)'
-    ).catch(() => null);
-    await new Promise((r) => setTimeout(r, 800));
+    // Aguardar fontes e layout estabilizarem
+    await printWindow.webContents.executeJavaScript('document.fonts.ready').catch(() => null);
+    await new Promise(r => setTimeout(r, 400));
 
-    // --- Selecionar impressora ---
+    // Medir altura real do conteúdo em px@96dpi
+    const contentPx = await printWindow.webContents.executeJavaScript(
+      'document.documentElement.scrollHeight'
+    );
+
+    // Converter para polegadas: 25.4mm = 1 pol; 96px = 1 pol
+    const paperWidth = 80 / 25.4;                    // 80mm → ~3.1496 pol
+    const paperHeight = Math.max(1, contentPx / 96); // px → polegadas
+
+    console.log(`[PRINT] PDF: ${paperWidth.toFixed(2)}" × ${paperHeight.toFixed(2)}" (${contentPx}px de conteúdo)`);
+
+    // Gerar PDF com dimensões exatas — uma única página, sem fragmentação
+    const pdfData = await printWindow.webContents.printToPDF({
+      printBackground: true,
+      paperWidth,
+      paperHeight,
+      margins: { marginType: 'none' },
+    });
+
+    tempPdfPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.pdf`);
+    fs.writeFileSync(tempPdfPath, pdfData);
+    console.log('[PRINT] PDF gerado:', tempPdfPath, `(${pdfData.length} bytes)`);
+
+    // Selecionar impressora
     const printers = await getPrinters();
     let selectedPrinter = printerConfig.selectedPrinter;
     if (!selectedPrinter || !printers.includes(selectedPrinter)) {
       selectedPrinter = printers[0] || '';
     }
-    console.log('[PRINT] Impressora:', selectedPrinter || '(dialogo do sistema)');
-    console.log('[PRINT] Impressoras disponiveis:', printers);
+    console.log('[PRINT] Impressora:', selectedPrinter || '(padrão do sistema)');
 
-    // --- Modo de impressão ---
-    const useSilent = printerConfig.useSilentMode && !!selectedPrinter;
-    console.log('[PRINT] Modo:', useSilent ? 'silencioso' : 'dialogo do SO');
+    // Imprimir PDF via pdf-to-printer (usa SumatraPDF no Windows)
+    const pdfToPrinter = require('pdf-to-printer');
+    const printOptions = {};
+    if (selectedPrinter) printOptions.printer = selectedPrinter;
+    await pdfToPrinter.print(tempPdfPath, printOptions);
 
-    // Para térmica: NÃO especificamos pageSize no JS.
-    // O CSS @page { size: 80mm auto; } faz o Chromium criar UMA página de 80mm × altura-do-conteúdo,
-    // exatamente como o browser faz ao imprimir — que funciona. Qualquer pageSize JS override
-    // esse comportamento com uma altura fixa calculada que pode estar errada → múltiplas tiras.
-    // Para A4: especificamos 'A4' normalmente.
-    const printOptions = {
-      silent: useSilent,
-      printBackground: true,
-      copies: 1,
-      margins: { marginType: 'none' },
-      scaleFactor: 100,
-    };
-    if (!isThermal) printOptions.pageSize = 'A4';
-    if (selectedPrinter) printOptions.deviceName = selectedPrinter;
-
-    return await new Promise((resolve, reject) => {
-      printWindow.webContents.print(printOptions, (success, errorType) => {
-        console.log('[PRINT] Resultado:', { success, errorType, printer: selectedPrinter });
-        if (success) {
-          if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
-          resolve(true);
-        } else {
-          reject(new Error(errorType || 'Falha na impressao'));
-        }
-      });
-    });
+    console.log('[PRINT] Impressão concluída:', job.id);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
+    }
+    return true;
 
   } catch (error) {
     console.error('[PRINT] Erro:', error.message);
-    if (mainWindow) mainWindow.webContents.send('print-error', { jobId: job.id, error: error.message });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('print-error', { jobId: job.id, error: error.message });
+    }
     throw error;
   } finally {
-    if (tempHtmlPath) try { fs.unlinkSync(tempHtmlPath); } catch {}
-    if (printWindow) setTimeout(() => { if (!printWindow.isDestroyed()) printWindow.destroy(); }, 3000);
+    if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
+    const delayedDelete = (p) => {
+      if (p) setTimeout(() => { try { fs.unlinkSync(p); } catch {} }, 5000);
+    };
+    delayedDelete(tempHtmlPath);
+    delayedDelete(tempPdfPath);
   }
 }
 

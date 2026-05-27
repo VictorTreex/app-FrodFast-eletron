@@ -5,7 +5,7 @@ import {
   Plus, Minus, ShoppingBag, ShoppingBasket, UtensilsCrossed,
   Search, Info, Clock, MapPin, Phone, X, Calendar, Bike, Store, Truck,
   CreditCard, Banknote, ChevronLeft, Pencil, Trash2, Check, Sparkles,
-  AlertCircle,
+  AlertCircle, Gift, ChevronDown,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -51,6 +51,8 @@ interface Settings {
   accept_scheduled?: boolean;
   scheduling_min_minutes?: number;
   scheduling_max_days?: number;
+  birthday_promo_enabled?: boolean;
+  birthday_promo_percent?: number;
 }
 
 const UNCATEGORIZED = "__uncategorized__";
@@ -113,6 +115,28 @@ const PublicMenu = () => {
       document.removeEventListener("wheel", blockZoomWheel);
     };
   }, []);
+
+  // Promoção de aniversário
+  const [birthdayDiscount, setBirthdayDiscount] = useState(0);
+
+  useEffect(() => {
+    if (!slug || !settings?.birthday_promo_enabled || !settings.birthday_promo_percent) return;
+    const customerId = localStorage.getItem(`customer_id_${slug}`);
+    if (!customerId) return;
+    (supabase as any)
+      .from("menu_customers")
+      .select("birth_date")
+      .eq("id", customerId)
+      .maybeSingle()
+      .then(({ data }: any) => {
+        if (!data?.birth_date) return;
+        const today = new Date();
+        const [, m, d] = (data.birth_date as string).split("-").map(Number);
+        if (today.getMonth() + 1 === m && today.getDate() === d) {
+          setBirthdayDiscount(settings.birthday_promo_percent ?? 10);
+        }
+      });
+  }, [slug, settings?.birthday_promo_enabled, settings?.birthday_promo_percent]);
 
   // sheets / dialogs
   const [productSheet, setProductSheet] = useState<{ product: Product; editingKey?: string } | null>(null);
@@ -500,6 +524,11 @@ const PublicMenu = () => {
       {/* ===== FAIXA DE STATUS (MARQUEE) ===== */}
       <StatusMarquee isOpen={isOpen} deliveryTime={settings?.delivery_time || null} />
 
+      {/* ===== BANNER DE ANIVERSÁRIO ===== */}
+      {birthdayDiscount > 0 && (
+        <BirthdayBanner theme={theme} discount={birthdayDiscount} />
+      )}
+
       {/* ===== BARRA DE BUSCA ===== */}
       <div className="container-app pt-4">
         <div className="relative">
@@ -655,6 +684,7 @@ const PublicMenu = () => {
                       theme={theme}
                       qty={productQty(p.id)}
                       flash={flashProductId === p.id}
+                      birthdayDiscount={birthdayDiscount}
                       onClick={() => setProductSheet({ product: p })}
                     />
                   ))}
@@ -747,6 +777,16 @@ const PublicMenu = () => {
                 <span className="text-sm" style={{ color: theme.muted }}>Subtotal</span>
                 <span className="text-base font-bold">R$ {subtotal.toFixed(2)}</span>
               </div>
+              {birthdayDiscount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: "hsl(142 71% 38%)" }}>
+                    🎂 Desconto aniversário ({birthdayDiscount}%)
+                  </span>
+                  <span className="text-sm font-bold" style={{ color: "hsl(142 71% 38%)" }}>
+                    - R$ {(subtotal * birthdayDiscount / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
               <button
                 className="flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold shadow-md transition active:scale-[0.98]"
                 style={{ background: theme.accent, color: theme.accentText }}
@@ -805,7 +845,9 @@ const PublicMenu = () => {
               settings={settings}
               restaurantName={restaurantName}
               menuId={(menu as any).id}
+              menuSlug={slug || ""}
               ownerUserId={(menu as any).user_id}
+              birthdayDiscount={birthdayDiscount}
               onCancel={() => setCheckoutOpen(false)}
               onSent={() => {
                 setCheckoutOpen(false);
@@ -821,6 +863,49 @@ const PublicMenu = () => {
 };
 
 /* ============= Componentes ============= */
+
+/* ===== Banner de Aniversário ===== */
+const BirthdayBanner = ({ theme, discount }: { theme: MenuTheme; discount: number }) => (
+  <div className="container-app pt-4">
+    <div
+      className="relative overflow-hidden rounded-2xl px-5 py-4 animate-in fade-in-0 slide-in-from-top-3 duration-500"
+      style={{
+        background: `linear-gradient(135deg, ${theme.accent}22 0%, ${theme.accent}10 100%)`,
+        border: `1.5px solid ${theme.accent}55`,
+      }}
+    >
+      {/* Brilho decorativo */}
+      <div
+        className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full blur-3xl opacity-30"
+        style={{ background: theme.accent }}
+      />
+      <div className="relative flex items-center gap-4">
+        <div
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-md text-2xl"
+          style={{ background: theme.accent }}
+        >
+          🎂
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-base font-extrabold leading-tight" style={{ color: theme.text }}>
+              Parabéns! Seu presente já está ativo
+            </span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider"
+              style={{ background: theme.accent, color: theme.accentText }}
+            >
+              {discount}% OFF
+            </span>
+          </div>
+          <p className="mt-0.5 text-xs font-medium" style={{ color: theme.muted }}>
+            Com preços promocionais automáticos em todo o pedido 🎉
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const StatusMarquee = ({ isOpen, deliveryTime }: { isOpen: boolean; deliveryTime: string | null }) => {
   const text = isOpen
@@ -1026,61 +1111,78 @@ const Divider = ({ theme }: { theme: MenuTheme }) => (
 
 
 const ProductCard = ({
-  product, theme, qty, flash, onClick,
+  product, theme, qty, flash, birthdayDiscount, onClick,
 }: {
-  product: Product; theme: MenuTheme; qty: number; flash?: boolean; onClick: () => void;
-}) => (
-  <button
-    onClick={onClick}
-    className={`group flex w-full items-stretch gap-3 overflow-hidden rounded-2xl border p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.99] sm:gap-4 sm:p-4 ${flash ? "ring-2 ring-offset-2 animate-scale-in" : ""}`}
-    style={{
-      background: theme.surface,
-      borderColor: theme.border,
-      ...(flash ? { boxShadow: `0 10px 24px -10px ${theme.accent}66` } : {}),
-    }}
-  >
-    <div className="flex min-w-0 flex-1 flex-col">
-      <h3 className="text-sm font-semibold leading-tight sm:text-base md:text-sm lg:text-base" style={{ color: theme.text }}>{product.name}</h3>
-      {product.description && (
-        <p className="mt-1 line-clamp-2 text-xs sm:text-sm md:text-xs lg:text-sm" style={{ color: theme.muted }}>{product.description}</p>
-      )}
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-3">
-        <span className="text-sm font-bold sm:text-base md:text-sm lg:text-base" style={{ color: theme.accent }}>
-          {product.price_from_enabled && product.price_from_value
-            ? `A partir de R$ ${Number(product.price_from_value).toFixed(2)}`
-            : `R$ ${Number(product.price).toFixed(2)}`}
-        </span>
-        <span
-          className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold shadow-sm transition group-hover:shadow-md group-active:scale-95 sm:px-3.5 sm:text-sm md:px-2.5 md:text-[11px] lg:px-3.5 lg:text-sm"
-          style={{
-            background: qty > 0 ? `${theme.accent}20` : theme.accent,
-            color: qty > 0 ? theme.accent : theme.accentText,
-          }}
+  product: Product; theme: MenuTheme; qty: number; flash?: boolean; birthdayDiscount?: number; onClick: () => void;
+}) => {
+  const discount = birthdayDiscount ?? 0;
+  const originalPrice = Number(product.price);
+  const discountedPrice = discount > 0 ? originalPrice * (1 - discount / 100) : originalPrice;
+
+  return (
+    <button
+      onClick={onClick}
+      className={`group flex w-full items-stretch gap-3 overflow-hidden rounded-2xl border p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.99] sm:gap-4 sm:p-4 ${flash ? "ring-2 ring-offset-2 animate-scale-in" : ""}`}
+      style={{
+        background: theme.surface,
+        borderColor: discount > 0 ? `${theme.accent}55` : theme.border,
+        ...(flash ? { boxShadow: `0 10px 24px -10px ${theme.accent}66` } : {}),
+      }}
+    >
+      <div className="flex min-w-0 flex-1 flex-col">
+        <h3 className="text-sm font-semibold leading-tight sm:text-base md:text-sm lg:text-base" style={{ color: theme.text }}>{product.name}</h3>
+        {product.description && (
+          <p className="mt-1 line-clamp-2 text-xs sm:text-sm md:text-xs lg:text-sm" style={{ color: theme.muted }}>{product.description}</p>
+        )}
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-3">
+          {discount > 0 && !product.price_from_enabled ? (
+            <div className="flex flex-col gap-0">
+              <span className="text-[11px] font-medium line-through" style={{ color: theme.muted }}>
+                R$ {originalPrice.toFixed(2)}
+              </span>
+              <span className="text-sm font-bold sm:text-base md:text-sm lg:text-base" style={{ color: theme.accent }}>
+                R$ {discountedPrice.toFixed(2)}
+              </span>
+            </div>
+          ) : (
+            <span className="text-sm font-bold sm:text-base md:text-sm lg:text-base" style={{ color: theme.accent }}>
+              {product.price_from_enabled && product.price_from_value
+                ? `A partir de R$ ${Number(product.price_from_value).toFixed(2)}`
+                : `R$ ${originalPrice.toFixed(2)}`}
+            </span>
+          )}
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold shadow-sm transition group-hover:shadow-md group-active:scale-95 sm:px-3.5 sm:text-sm md:px-2.5 md:text-[11px] lg:px-3.5 lg:text-sm"
+            style={{
+              background: qty > 0 ? `${theme.accent}20` : theme.accent,
+              color: qty > 0 ? theme.accent : theme.accentText,
+            }}
+          >
+            {qty > 0 ? `${qty} no carrinho` : <><Plus className="h-3.5 w-3.5" /> Adicionar</>}
+          </span>
+        </div>
+      </div>
+      {product.image_url ? (
+        <div className="aspect-square h-24 w-24 shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28 md:h-20 md:w-20 lg:h-24 lg:w-24 xl:h-28 xl:w-28">
+          <img
+            src={product.image_url}
+            alt={product.name}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+      ) : (
+        <div
+          className="flex aspect-square h-24 w-24 shrink-0 items-center justify-center rounded-xl sm:h-28 sm:w-28 md:h-20 md:w-20 lg:h-24 lg:w-24 xl:h-28 xl:w-28"
+          style={{ background: `${theme.accent}10` }}
         >
-          {qty > 0 ? `${qty} no carrinho` : <><Plus className="h-3.5 w-3.5" /> Adicionar</>}
-        </span>
-      </div>
-    </div>
-    {product.image_url ? (
-      <div className="aspect-square h-24 w-24 shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28 md:h-20 md:w-20 lg:h-24 lg:w-24 xl:h-28 xl:w-28">
-        <img
-          src={product.image_url}
-          alt={product.name}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          loading="lazy"
-          decoding="async"
-        />
-      </div>
-    ) : (
-      <div
-        className="flex aspect-square h-24 w-24 shrink-0 items-center justify-center rounded-xl sm:h-28 sm:w-28 md:h-20 md:w-20 lg:h-24 lg:w-24 xl:h-28 xl:w-28"
-        style={{ background: `${theme.accent}10` }}
-      >
-        <UtensilsCrossed className="h-7 w-7" style={{ color: theme.muted }} />
-      </div>
-    )}
-  </button>
-);
+          <UtensilsCrossed className="h-7 w-7" style={{ color: theme.muted }} />
+        </div>
+      )}
+    </button>
+  );
+};
 
 const CategoryChip = ({
   active, theme, iconKey, label, onClick,
@@ -1214,6 +1316,14 @@ function ProductSheetBody({
   const [selected, setSelected] = useState<Record<string, Map<string, number>>>({});
   const [notes, setNotes] = useState(existingItem?.notes || "");
   const [qty, setQty] = useState(existingItem?.quantity || 1);
+  // Grupos colapsáveis: categorias com >5 adicionais ficam fechadas até o toque
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroupExpand = (groupId: string) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(groupId) ? next.delete(groupId) : next.add(groupId);
+      return next;
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -1352,88 +1462,114 @@ function ProductSheetBody({
         <div className="space-y-5 px-5 pb-4">
           {addonGroups.map((g) => {
             const sel = selected[g.id] || new Map<string, number>();
+            const isCollapsible = g.options.length > 5;
+            const isExpanded = expandedGroups.has(g.id);
+            const showOptions = !isCollapsible || isExpanded;
             return (
               <div key={g.id}>
-                <div className="mb-2 flex items-center justify-between">
+                <div
+                  className="mb-2 flex items-center justify-between"
+                  style={isCollapsible ? { cursor: "pointer" } : undefined}
+                  onClick={isCollapsible ? () => toggleGroupExpand(g.id) : undefined}
+                >
                   <div>
                     <div className="text-sm font-bold" style={{ color: theme.text }}>{g.name}</div>
-                    <div className="text-[11px]" style={{ color: theme.muted }}>
-                      {g.selection_type === "single"
-                        ? "Escolha 1"
-                        : g.max_selections
-                        ? `Escolha até ${g.max_selections}`
-                        : "Selecione quantos quiser"}
-                      {g.is_required && " · obrigatório"}
-                    </div>
-                  </div>
-                  {g.is_required && sel.size === 0 && (
-                    <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-bold uppercase text-destructive">
-                      Obrigatório
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  {g.options.map((o) => {
-                    const optQty = sel.get(o.id) || 0;
-                    const checked = optQty > 0;
-                    const showQuantityControls = checked && g.selection_type === "multiple";
-                    return (
-                      <div
-                        key={o.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border p-3 transition"
-                        style={{
-                          borderColor: checked ? theme.accent : theme.border,
-                          background: checked ? `${theme.accent}10` : theme.bg,
-                        }}
-                      >
-                        <label className="flex flex-1 cursor-pointer items-center gap-3">
-                          <input
-                            type={g.selection_type === "single" ? "radio" : "checkbox"}
-                            name={`g-${g.id}`}
-                            checked={checked}
-                            onChange={() => toggleOption(g, o.id, o.default_quantity || 1)}
-                            className="accent-current"
-                            style={{ accentColor: theme.accent }}
-                          />
-                          <span className="text-sm">{o.name}</span>
-                          {o.price > 0 && (
-                            <span className="text-xs font-semibold" style={{ color: theme.accent }}>
-                              +R$ {o.price.toFixed(2)}
-                            </span>
-                          )}
-                        </label>
-                        {showQuantityControls && (
-                          <div
-                            className="flex items-center gap-1.5 rounded-full p-0.5"
-                            style={{ background: `${theme.accent}1F` }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setOptionQty(g.id, o.id, -1)}
-                              className="flex h-7 w-7 items-center justify-center rounded-full"
-                              style={{ background: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
-                              aria-label="Diminuir"
-                            >
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="w-5 text-center text-xs font-bold tabular-nums" style={{ color: theme.text }}>
-                              {optQty}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setOptionQty(g.id, o.id, +1)}
-                              className="flex h-7 w-7 items-center justify-center rounded-full"
-                              style={{ background: theme.accent, color: theme.accentText }}
-                              aria-label="Aumentar"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )}
+                    {showOptions ? (
+                      <div className="text-[11px]" style={{ color: theme.muted }}>
+                        {g.selection_type === "single"
+                          ? "Escolha 1"
+                          : g.max_selections
+                          ? `Escolha até ${g.max_selections}`
+                          : "Selecione quantos quiser"}
+                        {g.is_required && " · obrigatório"}
                       </div>
-                    );
-                  })}
+                    ) : (
+                      <div className="text-[11px] font-semibold" style={{ color: theme.accent }}>
+                        Clique para escolher
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {g.is_required && sel.size === 0 && (
+                      <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-bold uppercase text-destructive">
+                        Obrigatório
+                      </span>
+                    )}
+                    {isCollapsible && (
+                      <ChevronDown
+                        className="h-4 w-4 transition-transform duration-200"
+                        style={{
+                          color: theme.muted,
+                          transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
+                {showOptions && (
+                  <div className="space-y-2">
+                    {g.options.map((o) => {
+                      const optQty = sel.get(o.id) || 0;
+                      const checked = optQty > 0;
+                      const showQuantityControls = checked && g.selection_type === "multiple";
+                      return (
+                        <div
+                          key={o.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border p-3 transition"
+                          style={{
+                            borderColor: checked ? theme.accent : theme.border,
+                            background: checked ? `${theme.accent}10` : theme.bg,
+                          }}
+                        >
+                          <label className="flex flex-1 cursor-pointer items-center gap-3">
+                            <input
+                              type={g.selection_type === "single" ? "radio" : "checkbox"}
+                              name={`g-${g.id}`}
+                              checked={checked}
+                              onChange={() => toggleOption(g, o.id, o.default_quantity || 1)}
+                              className="accent-current"
+                              style={{ accentColor: theme.accent }}
+                            />
+                            <span className="text-sm">{o.name}</span>
+                            {o.price > 0 && (
+                              <span className="text-xs font-semibold" style={{ color: theme.accent }}>
+                                +R$ {o.price.toFixed(2)}
+                              </span>
+                            )}
+                          </label>
+                          {showQuantityControls && (
+                            <div
+                              className="flex items-center gap-1.5 rounded-full p-0.5"
+                              style={{ background: `${theme.accent}1F` }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setOptionQty(g.id, o.id, -1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-full"
+                                style={{ background: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
+                                aria-label="Diminuir"
+                              >
+                                <Minus className="h-3 w-3" />
+                              </button>
+                              <span className="w-5 text-center text-xs font-bold tabular-nums" style={{ color: theme.text }}>
+                                {optQty}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setOptionQty(g.id, o.id, +1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-full"
+                                style={{ background: theme.accent, color: theme.accentText }}
+                                aria-label="Aumentar"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1489,7 +1625,7 @@ function ProductSheetBody({
 
 /* ===== Checkout ===== */
 function CheckoutFlow({
-  theme, cart, subtotal, settings, restaurantName, menuId, ownerUserId, onCancel, onSent,
+  theme, cart, subtotal, settings, restaurantName, menuId, menuSlug, ownerUserId, birthdayDiscount, onCancel, onSent,
 }: {
   theme: MenuTheme;
   cart: CartItem[];
@@ -1497,7 +1633,9 @@ function CheckoutFlow({
   settings: Settings;
   restaurantName: string;
   menuId: string;
+  menuSlug: string;
   ownerUserId: string;
+  birthdayDiscount: number;
   onCancel: () => void;
   onSent: () => void;
 }) {
@@ -1530,8 +1668,11 @@ function CheckoutFlow({
     });
   }, [data.customerName, data.customerPhone, data.address]);
 
+  const [birthDate, setBirthDate] = useState("");
+
   const deliveryFee = data.orderType === "delivery" ? Number(settings.delivery_fee || 0) : 0;
-  const total = subtotal + deliveryFee;
+  const discountAmount = birthdayDiscount > 0 ? Math.round(subtotal * birthdayDiscount) / 100 : 0;
+  const total = subtotal - discountAmount + deliveryFee;
 
   const next = () => setStep((s) => (s === 3 ? 3 : ((s + 1) as any)));
   const prev = () => (step === 1 ? onCancel() : setStep((s) => ((s - 1) as any)));
@@ -1592,6 +1733,7 @@ function CheckoutFlow({
       // estruturada continuam sendo anexados como histórico interno.
       const notesTxt = [
         `Pagamento: ${PAYMENT_LABEL[data.payment]}`,
+        birthdayDiscount > 0 ? `Desconto aniversário: ${birthdayDiscount}% (-R$ ${discountAmount.toFixed(2)})` : null,
         `__msg__: ${message}`,
       ].filter(Boolean).join(" · ");
 
@@ -1635,6 +1777,30 @@ function CheckoutFlow({
       supabase.functions.invoke("whatsapp-notify-order", {
         body: { order_id: orderId, status: "new" },
       }).catch(() => {});
+
+      // Cadastra/atualiza cliente para detecção futura de aniversário
+      if (birthDate && menuSlug) {
+        (supabase as any)
+          .from("menu_customers")
+          .upsert(
+            {
+              menu_id: menuId,
+              name: data.customerName.trim(),
+              phone: data.customerPhone.trim(),
+              birth_date: birthDate,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "menu_id,phone" },
+          )
+          .select("id")
+          .maybeSingle()
+          .then(({ data: customer }: any) => {
+            if (customer?.id) {
+              localStorage.setItem(`customer_id_${menuSlug}`, customer.id);
+            }
+          })
+          .catch(() => {});
+      }
 
       // Sucesso → segue para tela de confirmação
       setSubmitting(false);
@@ -1890,6 +2056,34 @@ function CheckoutFlow({
               />
             </Field>
 
+            {settings.birthday_promo_enabled && (
+              <div
+                className="rounded-xl border p-4"
+                style={{ background: `${theme.accent}0C`, borderColor: `${theme.accent}40` }}
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  <Gift className="h-4 w-4" style={{ color: theme.accent }} />
+                  <span className="text-sm font-bold" style={{ color: theme.text }}>
+                    Ganhe desconto no seu aniversário 🎂
+                  </span>
+                </div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide" style={{ color: theme.muted }}>
+                  Data de nascimento (opcional)
+                </label>
+                <input
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  max={new Date().toISOString().split("T")[0]}
+                  className="h-11 w-full rounded-lg px-3 text-sm outline-none"
+                  style={{ background: theme.bg, color: theme.text, border: `1px solid ${theme.border}` }}
+                />
+                <p className="mt-1.5 text-[11px]" style={{ color: theme.muted }}>
+                  No seu aniversário você verá {settings.birthday_promo_percent ?? 10}% de desconto automático no cardápio.
+                </p>
+              </div>
+            )}
+
             {data.orderType === "delivery" && (
               <>
                 <div className="grid grid-cols-3 gap-2">
@@ -1953,6 +2147,16 @@ function CheckoutFlow({
             <span style={{ color: theme.muted }}>Subtotal ({cartItemCount(cart)} itens)</span>
             <span className="font-semibold">R$ {subtotal.toFixed(2)}</span>
           </div>
+          {birthdayDiscount > 0 && (
+            <div className="mt-1 flex items-center justify-between">
+              <span className="flex items-center gap-1" style={{ color: "hsl(142 71% 38%)" }}>
+                🎂 Desconto aniversário ({birthdayDiscount}%)
+              </span>
+              <span className="font-semibold" style={{ color: "hsl(142 71% 38%)" }}>
+                - R$ {discountAmount.toFixed(2)}
+              </span>
+            </div>
+          )}
           {data.orderType === "delivery" && (
             <div className="mt-1 flex items-center justify-between">
               <span style={{ color: theme.muted }}>Taxa de entrega</span>

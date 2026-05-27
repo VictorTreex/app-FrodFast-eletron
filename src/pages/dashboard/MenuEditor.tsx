@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Pencil, Trash2, Image as ImageIcon, Upload, Eye, Check, GripVertical, Package, Tag, Sparkles, Palette, Info, Save, Phone, MapPin, Clock, MessageCircle, Tag as TagIcon, Timer, Wallet, Search, X, FolderOpen, Smartphone, Monitor, Lightbulb } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, Image as ImageIcon, Upload, Eye, Check, GripVertical, Package, Tag, Sparkles, Palette, Info, Save, Phone, MapPin, Clock, MessageCircle, Tag as TagIcon, Timer, Wallet, Search, X, FolderOpen, Smartphone, Monitor, Lightbulb, Gift, Percent } from "lucide-react";
 import { toast } from "sonner";
 import { MENU_THEMES, getMenuTheme } from "@/lib/menuThemes";
 import { ThemePreview } from "@/components/menu/ThemePreview";
@@ -74,6 +74,8 @@ interface MenuSettings {
   accept_scheduled: boolean;
   scheduling_min_minutes: number;
   scheduling_max_days: number;
+  birthday_promo_enabled: boolean;
+  birthday_promo_percent: number;
 }
 
 const themeList = Object.values(MENU_THEMES);
@@ -101,7 +103,8 @@ const MenuEditor = () => {
     logo_url: null, display_name: null, primary_color: "#6C2BD9", layout_style: "modern", whatsapp_number: null,
     address: null, phone: null, opening_hours: null, delivery_time: null, is_open: true,
     business_hours: DEFAULT_HOURS, accept_delivery: false, accept_pickup: false, accept_dine_in: false,
-    delivery_fee: 0, accept_scheduled: false, scheduling_min_minutes: 30, scheduling_max_days: 7
+    delivery_fee: 0, accept_scheduled: false, scheduling_min_minutes: 30, scheduling_max_days: 7,
+    birthday_promo_enabled: false, birthday_promo_percent: 10,
   });
 
   // Helper para obter URL segura do cardápio
@@ -1152,6 +1155,68 @@ const MenuEditor = () => {
                       Até quantos dias à frente o cliente pode agendar.
                     </p>
                   </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ===== Promoção de Aniversário ===== */}
+          <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <header className="flex items-center gap-4 border-b border-border bg-gradient-to-r from-primary/5 via-card to-card px-6 py-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Gift className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-lg font-semibold tracking-tight">Promoção de Aniversário</h3>
+                <p className="text-xs text-muted-foreground">
+                  Desconto automático para clientes que se cadastrarem e abrirem o cardápio no dia do aniversário.
+                </p>
+              </div>
+            </header>
+
+            <div className="space-y-5 p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Gift className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h4 className="font-display text-base font-semibold tracking-tight">
+                      Ativar promoção de aniversário
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      O cliente informa a data de nascimento no primeiro pedido. No aniversário, vê desconto automático.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.birthday_promo_enabled}
+                  onCheckedChange={(v) => { setSettings({ ...settings, birthday_promo_enabled: v }); setInfoDirty(true); }}
+                />
+              </div>
+
+              {settings.birthday_promo_enabled && (
+                <div className="max-w-xs space-y-1.5">
+                  <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Percent className="h-3.5 w-3.5" />
+                    Desconto (%)
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={settings.birthday_promo_percent}
+                    onChange={(e) => {
+                      const n = Math.max(1, Math.min(100, Number(e.target.value) || 10));
+                      setSettings({ ...settings, birthday_promo_percent: n });
+                      setInfoDirty(true);
+                    }}
+                    className="h-11 text-base font-semibold"
+                    placeholder="10"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Desconto aplicado automaticamente no total do pedido do aniversariante.
+                  </p>
                 </div>
               )}
             </div>
