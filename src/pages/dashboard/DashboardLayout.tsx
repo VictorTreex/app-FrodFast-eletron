@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { UpdateBanner } from "@/components/UpdateBanner";
 
 const baseItems = [
   { to: "/dashboard", label: "Cardápios", icon: LayoutGrid, end: true },
@@ -61,6 +62,7 @@ const DashboardLayout = () => {
 
   return (
     <div className="flex min-h-screen w-full bg-muted/40">
+      <UpdateBanner />
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-72 flex-col border-r border-sidebar-border bg-sidebar">
         {/* Brand */}
         <div className="flex h-32 items-center justify-center border-b border-sidebar-border px-4">

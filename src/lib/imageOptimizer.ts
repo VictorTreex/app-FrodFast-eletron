@@ -1,14 +1,14 @@
 /**
  * Converte imagens (JPEG/PNG) para WebP no client antes do upload.
- * - Mantém alta qualidade (0.9)
- * - Redimensiona para no máximo 1600px no maior lado (evita uploads gigantes)
+ * - Qualidade 0.82 — equilíbrio entre nitidez e leveza (~30% menor que 0.9)
+ * - Redimensiona para no máximo 1200px (suficiente para cards, carrega bem no mobile)
  * - Pula GIF/SVG/WebP (já otimizados ou animados)
  * - Fallback: se a conversão falhar por qualquer motivo, devolve o arquivo original
  *   para nunca quebrar o upload.
  */
 
-const MAX_DIMENSION = 1600;
-const WEBP_QUALITY = 0.9;
+const MAX_DIMENSION = 1200;
+const WEBP_QUALITY = 0.82;
 
 const SKIP_TYPES = new Set(["image/webp", "image/gif", "image/svg+xml"]);
 

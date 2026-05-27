@@ -34,6 +34,7 @@ interface MenuLite { id: string; name: string; }
 interface ProductLite {
   id: string; name: string; price: number; image_url: string | null;
   category_id: string | null; description: string | null;
+  price_from_enabled: boolean | null; price_from_value: number | null;
 }
 interface CategoryLite { id: string; name: string; }
 
@@ -107,7 +108,7 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
       const [{ data: ps }, { data: cs }, { data: ms }] = await Promise.all([
         supabase
           .from("products")
-          .select("id,name,price,image_url,category_id,description")
+          .select("id,name,price,image_url,category_id,description,price_from_enabled,price_from_value")
           .eq("menu_id", menuId)
           .eq("is_available", true)
           .order("position"),
@@ -433,7 +434,11 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="truncate text-sm font-semibold">{p.name}</div>
-                                <div className="text-xs text-muted-foreground">R$ {Number(p.price).toFixed(2)}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {p.price_from_enabled && p.price_from_value
+                                    ? `A partir de R$ ${Number(p.price_from_value).toFixed(2)}`
+                                    : `R$ ${Number(p.price).toFixed(2)}`}
+                                </div>
                               </div>
                               <Plus className="h-4 w-4 text-primary" />
                             </button>

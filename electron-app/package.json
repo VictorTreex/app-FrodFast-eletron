@@ -2,7 +2,7 @@
 
   "name": "frodfast",
 
-  "version": "1.3.2",
+  "version": "1.3.5",
 
   "description": "FrodFast - Electron app for restaurant management",
 
@@ -166,7 +166,9 @@
 
         "owner": "VictorTreex",
 
-        "repo": "app-FrodFast-eletron"
+        "repo": "app-FrodFast-eletron",
+
+        "releaseType": "release"
 
       }
 

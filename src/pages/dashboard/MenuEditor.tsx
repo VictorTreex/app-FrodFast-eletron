@@ -597,7 +597,9 @@ const MenuEditor = () => {
                                             )}
                                           </div>
                                           <div className="shrink-0 text-sm font-bold text-primary">
-                                            R$ {Number(p.price).toFixed(2)}
+                                            {p.price_from_enabled && p.price_from_value
+                                              ? `A partir de R$ ${Number(p.price_from_value).toFixed(2)}`
+                                              : `R$ ${Number(p.price).toFixed(2)}`}
                                           </div>
                                         </div>
                                         <div className="mt-2 flex gap-1">
@@ -1171,15 +1173,20 @@ const MenuEditor = () => {
 
       {/* PRODUCT DIALOG */}
       <Dialog open={productOpen} onOpenChange={setProductOpen}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto p-0">
+        <DialogContent className="flex flex-col gap-0 p-0 overflow-hidden max-h-[92vh] max-w-2xl max-sm:w-full max-sm:max-w-none max-sm:left-0 max-sm:right-0 max-sm:bottom-0 max-sm:top-auto max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:rounded-t-3xl max-sm:max-h-[92dvh]">
           {editingProduct && (
             <>
-              {/* Hero header */}
-              <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/10 via-card to-card px-6 py-5">
+              {/* Drag handle — mobile only */}
+              <div className="flex justify-center pt-3 pb-0 sm:hidden shrink-0">
+                <div className="h-1 w-10 rounded-full bg-border" />
+              </div>
+
+              {/* Sticky header */}
+              <div className="shrink-0 relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/10 via-card to-card px-5 py-4 sm:px-6 sm:py-5">
                 <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2.5 text-xl font-display font-bold tracking-tight">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
-                      <Package className="h-5 w-5" />
+                  <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-display font-bold tracking-tight">
+                    <span className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
+                      <Package className="h-4 w-4 sm:h-5 sm:w-5" />
                     </span>
                     {editingProduct?.id ? "Editar produto" : "Novo produto"}
                   </DialogTitle>
@@ -1191,29 +1198,31 @@ const MenuEditor = () => {
                 </DialogHeader>
               </div>
 
-              <div className="space-y-6 p-6">
+              {/* Scrollable content */}
+              <div className="flex-1 overflow-y-auto overscroll-contain space-y-5 p-5 sm:space-y-6 sm:p-6">
+
                 {/* Foto + nome */}
-                <section className="rounded-2xl border border-border bg-muted/20 p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="relative">
-                      <div className="h-24 w-24 overflow-hidden rounded-xl border-2 border-border bg-card shadow-sm flex items-center justify-center">
+                <section className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => productImageInput.current?.click()}
+                      className="relative shrink-0 group"
+                      aria-label="Enviar foto"
+                    >
+                      <div className="h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-xl border-2 border-border bg-card shadow-sm flex items-center justify-center transition-opacity group-active:opacity-70">
                         {editingProduct.image_url ? (
                           <img src={editingProduct.image_url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                         ) : (
-                          <ImageIcon className="h-7 w-7 text-muted-foreground" />
+                          <ImageIcon className="h-6 w-6 sm:h-7 sm:w-7 text-muted-foreground" />
                         )}
                       </div>
-                      <input type="file" accept="image/*" ref={productImageInput} onChange={handleProductImage} className="hidden" />
-                      <button
-                        type="button"
-                        onClick={() => productImageInput.current?.click()}
-                        className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform hover:scale-105"
-                        aria-label="Enviar foto"
-                      >
-                        <Upload className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="flex-1 space-y-1.5">
+                      <span className="absolute -bottom-2 -right-2 flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform group-hover:scale-105">
+                        <Upload className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      </span>
+                    </button>
+                    <input type="file" accept="image/*" ref={productImageInput} onChange={handleProductImage} className="hidden" />
+                    <div className="flex-1 min-w-0 space-y-1.5">
                       <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Nome do produto
                       </Label>
@@ -1282,16 +1291,14 @@ const MenuEditor = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sem categoria</SelectItem>
-                        {categories.map((c) => {
-                          return (
-                            <SelectItem key={c.id} value={c.id}>
-                              <span className="inline-flex items-center gap-2">
-                                <CategoryIconView iconKey={c.icon} size={18} />
-                                {c.name}
-                              </span>
-                            </SelectItem>
-                          );
-                        })}
+                        {categories.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            <span className="inline-flex items-center gap-2">
+                              <CategoryIconView iconKey={c.icon} size={18} />
+                              {c.name}
+                            </span>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     {categories.length === 0 && (
@@ -1303,7 +1310,7 @@ const MenuEditor = () => {
                 </div>
 
                 {/* Preço a partir de */}
-                <div className="rounded-2xl border border-border bg-muted/20 p-5">
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
                   <div className="mb-4 flex items-center gap-2.5">
                     <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       <Wallet className="h-4 w-4" />
@@ -1318,7 +1325,7 @@ const MenuEditor = () => {
                       <Label className="text-sm font-medium">Mostrar "a partir de"</Label>
                       <Switch
                         checked={editingProduct.price_from_enabled || false}
-                        onCheckedChange={(checked) => 
+                        onCheckedChange={(checked) =>
                           setEditingProduct({ ...editingProduct, price_from_enabled: checked })
                         }
                       />
@@ -1342,20 +1349,9 @@ const MenuEditor = () => {
                   </div>
                 </div>
 
-                <Button
-                  variant="cta"
-                  size="lg"
-                  className="w-full"
-                  onClick={saveProduct}
-                  disabled={savingProduct}
-                >
-                  <Save className="h-4 w-4" />
-                  {savingProduct ? "Salvando..." : "Salvar produto"}
-                </Button>
-
                 {/* Adicionais — só após o produto existir */}
                 {editingProduct.id && user && (
-                  <div className="rounded-2xl border border-border bg-muted/20 p-5">
+                  <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
                     <div className="mb-4 flex items-center gap-2.5">
                       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                         <Sparkles className="h-4 w-4" />
@@ -1371,7 +1367,7 @@ const MenuEditor = () => {
 
                 {/* Receita / estoque — só após o produto existir */}
                 {editingProduct.id && user && (
-                  <div className="rounded-2xl border border-border bg-muted/20 p-5">
+                  <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
                     <div className="mb-4 flex items-center gap-2.5">
                       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                         <Package className="h-4 w-4" />
@@ -1384,11 +1380,26 @@ const MenuEditor = () => {
                     <RecipeManager productId={editingProduct.id} />
                   </div>
                 )}
+
                 {!editingProduct.id && (
                   <p className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
                     💡 Salve o produto primeiro para configurar adicionais.
                   </p>
                 )}
+              </div>
+
+              {/* Sticky save footer */}
+              <div className="shrink-0 border-t border-border bg-card/95 backdrop-blur-sm px-5 py-4 sm:px-6">
+                <Button
+                  variant="cta"
+                  size="lg"
+                  className="w-full"
+                  onClick={saveProduct}
+                  disabled={savingProduct}
+                >
+                  <Save className="h-4 w-4" />
+                  {savingProduct ? "Salvando..." : "Salvar produto"}
+                </Button>
               </div>
             </>
           )}

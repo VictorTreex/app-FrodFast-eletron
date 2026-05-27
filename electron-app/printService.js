@@ -140,13 +140,21 @@ html, body {
   width: 80mm;
   background: #fff;
   color: #000;
+  /* overflow:visible garante que scrollHeight meça o conteúdo real */
+  overflow: visible;
 }
 body {
   font-family: 'Courier New', Courier, monospace;
   font-size: 12px;
   line-height: 1.4;
 }
-.ticket { width: 100%; padding: 3mm 4mm 4mm; }
+.ticket {
+  width: 100%;
+  padding: 3mm 4mm 4mm;
+  /* Impede que o ticket seja partido entre páginas caso haja paginação residual */
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
 .center { text-align: center; }
 .bold { font-weight: bold; }
 .big { font-size: 14px; }

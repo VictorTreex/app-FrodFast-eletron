@@ -58,9 +58,20 @@ export const whatsappApi = {
     return data;
   },
 
-  // POST /save-config/{userId}
+  // GET /auto-reply/:storeId
+  getConfig: async (storeId: string) => {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/auto-reply/${storeId}`);
+
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar configuração: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  },
+
+  // POST /auto-reply/:storeId
   saveConfig: async (userId: string, message_text: string, cooldown_hours: number, is_active: boolean) => {
-    const response = await fetch(`${WHATSAPP_API_BASE_URL}/save-config/${userId}`, {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/auto-reply/${userId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -71,14 +82,13 @@ export const whatsappApi = {
         is_active
       }),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erro ao salvar configuração: ${response.status} ${response.statusText}`);
     }
-    
+
     const data = await response.json();
-    
-    // Tratar novo formato de resposta Evolution API
+
     if (data.success) {
       return data;
     } else {

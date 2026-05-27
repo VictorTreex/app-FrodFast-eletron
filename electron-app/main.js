@@ -466,7 +466,6 @@ function isDuplicatePrint(html) {
 async function executePrintJob(job) {
   let printWindow = null;
   let tempHtmlPath = null;
-  let tempPdfPath = null;
 
   try {
     console.log('[PRINT] Iniciando job:', job.id);
@@ -475,21 +474,15 @@ async function executePrintJob(job) {
       return true;
     }
 
-    const printers = await getPrinters();
-    let selectedPrinter = printerConfig.selectedPrinter;
-    if (!selectedPrinter || !printers.includes(selectedPrinter)) {
-      selectedPrinter = printers[0] || '';
-    }
-    console.log('[PRINT] Impressora:', selectedPrinter);
-    if (!selectedPrinter) throw new Error('Nenhuma impressora disponivel');
-
     const html = job.data.html;
     const isThermal = printerConfig.printerType === 'thermal';
+    // 302px = 80mm a 96dpi; 794px = A4 a 96dpi
     const winWidth = isThermal ? 302 : 794;
 
-    // Janela visivel fora da tela: Chromium renderiza completamente sem aparecer para o usuario.
-    // height alto evita que o viewport corte o conteudo antes da medicao do scrollHeight.
-    // deviceScaleFactor:1 fixa 96 DPI independente da escala do Windows (125%, 150%...).
+    // Janela de renderização fora da tela.
+    // X positivo grande (10000) evita problemas de composição que ocorrem em X negativo
+    // em algumas configs de GPU/Windows. deviceScaleFactor:1 fixa 96dpi independente
+    // da escala do Windows (125%, 150%...) para que scrollHeight seja sempre em px@96dpi.
     printWindow = new BrowserWindow({
       show: true,
       frame: false,
@@ -498,7 +491,7 @@ async function executePrintJob(job) {
       focusable: false,
       width: winWidth,
       height: 4000,
-      x: -(winWidth + 20),
+      x: 10000,
       y: 0,
       webPreferences: { sandbox: false, deviceScaleFactor: 1 },
     });
@@ -506,72 +499,52 @@ async function executePrintJob(job) {
     tempHtmlPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.html`);
     fs.writeFileSync(tempHtmlPath, html, 'utf-8');
     await printWindow.loadFile(tempHtmlPath);
-    await new Promise((r) => setTimeout(r, 1500));
 
-    const scrollH = await printWindow.webContents
-      .executeJavaScript('Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)')
-      .catch(() => 0);
-    console.log('[PRINT] scrollHeight:', scrollH, 'px');
+    // Aguardar fontes e layout finalizarem
+    await printWindow.webContents.executeJavaScript(
+      'document.fonts.ready.then(() => true)'
+    ).catch(() => null);
+    await new Promise((r) => setTimeout(r, 800));
 
-    if (scrollH < 50) throw new Error(`Conteudo nao renderizou (scrollHeight=${scrollH}px)`);
-
-    if (isThermal) {
-      // -------------------------------------------------------
-      // TERMICA: webContents.print() com pageSize calculado.
-      // Envia direto ao driver Windows — sem SumatraPDF no meio.
-      // SumatraPDF escalava o conteudo para o tamanho de papel
-      // configurado no driver (ex: 80x70mm), cortando o ticket.
-      // Com webContents.print() o Chromium usa as dimensoes
-      // exatas que calculamos, igual ao que o browser faz.
-      // -------------------------------------------------------
-      const heightMicrons = Math.ceil(scrollH * (25400 / 96)) + 25000; // +25mm folga
-      console.log('[PRINT] Imprimindo termica:', (80000/1000).toFixed(0), 'mm x', (heightMicrons/1000).toFixed(0), 'mm');
-
-      return await new Promise((resolve, reject) => {
-        printWindow.webContents.print({
-          silent: true,
-          printBackground: true,
-          deviceName: selectedPrinter,
-          pageSize: { width: 80000, height: heightMicrons },
-          margins: { marginType: 'none' },
-          scaleFactor: 100,
-          copies: 1,
-        }, (success, errorType) => {
-          console.log('[PRINT] Callback termica:', { success, errorType });
-          if (success) {
-            if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
-            resolve(true);
-          } else {
-            reject(new Error(errorType || 'Falha na impressao termica'));
-          }
-        });
-      });
-
-    } else {
-      // -------------------------------------------------------
-      // NORMAL (A4): webContents.print() funciona bem
-      // -------------------------------------------------------
-      return await new Promise((resolve, reject) => {
-        printWindow.webContents.print({
-          silent: printerConfig.useSilentMode,
-          printBackground: true,
-          deviceName: selectedPrinter,
-          copies: 1,
-          landscape: false,
-          pageSize: 'A4',
-          margins: { marginType: 'none' },
-          scaleFactor: 100,
-        }, (success, errorType) => {
-          console.log('[PRINT] Callback A4:', { success, errorType });
-          if (success) {
-            if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
-            resolve(true);
-          } else {
-            reject(new Error(errorType || 'Falha na impressao'));
-          }
-        });
-      });
+    // --- Selecionar impressora ---
+    const printers = await getPrinters();
+    let selectedPrinter = printerConfig.selectedPrinter;
+    if (!selectedPrinter || !printers.includes(selectedPrinter)) {
+      selectedPrinter = printers[0] || '';
     }
+    console.log('[PRINT] Impressora:', selectedPrinter || '(dialogo do sistema)');
+    console.log('[PRINT] Impressoras disponiveis:', printers);
+
+    // --- Modo de impressão ---
+    const useSilent = printerConfig.useSilentMode && !!selectedPrinter;
+    console.log('[PRINT] Modo:', useSilent ? 'silencioso' : 'dialogo do SO');
+
+    // Para térmica: NÃO especificamos pageSize no JS.
+    // O CSS @page { size: 80mm auto; } faz o Chromium criar UMA página de 80mm × altura-do-conteúdo,
+    // exatamente como o browser faz ao imprimir — que funciona. Qualquer pageSize JS override
+    // esse comportamento com uma altura fixa calculada que pode estar errada → múltiplas tiras.
+    // Para A4: especificamos 'A4' normalmente.
+    const printOptions = {
+      silent: useSilent,
+      printBackground: true,
+      copies: 1,
+      margins: { marginType: 'none' },
+      scaleFactor: 100,
+    };
+    if (!isThermal) printOptions.pageSize = 'A4';
+    if (selectedPrinter) printOptions.deviceName = selectedPrinter;
+
+    return await new Promise((resolve, reject) => {
+      printWindow.webContents.print(printOptions, (success, errorType) => {
+        console.log('[PRINT] Resultado:', { success, errorType, printer: selectedPrinter });
+        if (success) {
+          if (mainWindow) mainWindow.webContents.send('print-success', { jobId: job.id, printer: selectedPrinter });
+          resolve(true);
+        } else {
+          reject(new Error(errorType || 'Falha na impressao'));
+        }
+      });
+    });
 
   } catch (error) {
     console.error('[PRINT] Erro:', error.message);
@@ -579,7 +552,6 @@ async function executePrintJob(job) {
     throw error;
   } finally {
     if (tempHtmlPath) try { fs.unlinkSync(tempHtmlPath); } catch {}
-    if (tempPdfPath) setTimeout(() => { try { fs.unlinkSync(tempPdfPath); } catch {} }, 8000);
     if (printWindow) setTimeout(() => { if (!printWindow.isDestroyed()) printWindow.destroy(); }, 3000);
   }
 }
@@ -654,7 +626,9 @@ function createWindow() {
 
 
 
-  mainWindow.loadURL('http://localhost:8080/');
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === 'true';
+  const appURL = isDev ? 'http://localhost:8080/' : 'https://treexonline.online';
+  mainWindow.loadURL(appURL);
 
 
 
@@ -668,6 +642,15 @@ function createWindow() {
 
     mainWindow.show();
 
+  });
+
+  // Verificar updates assim que a página terminar de carregar.
+  // O check de 5s dispara antes do site carregar — os eventos IPC são perdidos
+  // porque o React ainda não montou os listeners. did-finish-load garante que
+  // o renderer já está pronto para receber o evento update-status.
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('🌐 [MAIN] Página carregada, verificando atualizações...');
+    setTimeout(() => autoUpdater.checkForUpdates(), 3000);
   });
 
   // F12 abre DevTools para visualizar logs de impressao
@@ -1122,28 +1105,11 @@ app.whenReady().then(() => {
 
   
 
-  // Primeira verificação de atualizações após 5 segundos
-
-  setTimeout(() => {
-
-    console.log('🔄 [UPDATE] Iniciando primeira verificação de atualizações...');
-
-    autoUpdater.checkForUpdates();
-
-  }, 5000);
-
-  
-
-  // Verificação recorrente automática a cada 1 hora
-  // (60s causava rate limit na API pública do GitHub: 60 req/h)
-
+  // Verificação recorrente a cada 30 minutos (era 1 hora — muito longo)
   setInterval(() => {
-
     console.log('🔄 [UPDATE] Verificação recorrente de atualizações...');
-
     autoUpdater.checkForUpdates();
-
-  }, 60 * 60 * 1000); // 1 hora
+  }, 30 * 60 * 1000);
 
 });
 
