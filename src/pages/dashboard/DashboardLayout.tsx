@@ -1,5 +1,5 @@
 import { Outlet, NavLink as RRNavLink, Navigate, useNavigate } from "react-router-dom";
-import { LayoutGrid, Settings, CreditCard, LogOut, UtensilsCrossed, BarChart3, Package, Boxes, Moon, Sun, MessageSquare, Shield } from "lucide-react";
+import { LayoutGrid, Settings, CreditCard, LogOut, UtensilsCrossed, BarChart3, Package, Boxes, Moon, Sun, MessageSquare, Shield, Users } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Logo } from "@/components/Logo";
@@ -12,6 +12,7 @@ import { UpdateBanner } from "@/components/UpdateBanner";
 const baseItems = [
   { to: "/dashboard", label: "Cardápios", icon: LayoutGrid, end: true },
   { to: "/dashboard/pedidos", label: "Pedidos", icon: Package },
+  { to: "/dashboard/clientes", label: "Clientes", icon: Users },
   { to: "/dashboard/estoque", label: "Estoque", icon: Boxes },
   { to: "/dashboard/whatsapp", label: "WhatsApp", icon: MessageSquare },
   { to: "/dashboard/vendas", label: "Vendas", icon: BarChart3 },

@@ -1,9 +1,19 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = [
+  'https://treexonline.online',
+  'https://www.treexonline.online',
+  'http://localhost:8080',
+  'http://localhost:5173',
+]
+
+function getCorsHeaders(origin: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
+  }
 }
 
 const API_URL =
@@ -18,6 +28,8 @@ const RATE_LIMIT = 60 // 60 requisições por minuto
 const WINDOW_MS = 60 * 1000 // 1 minuto
 
 serve(async (req) => {
+  const origin = req.headers.get('Origin')
+  const corsHeaders = getCorsHeaders(origin)
 
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
@@ -26,25 +38,25 @@ serve(async (req) => {
   }
 
   // Rate limiting
-  const clientIP = req.headers.get('x-forwarded-for') || 
-                   req.headers.get('x-real-ip') || 
+  const clientIP = req.headers.get('x-forwarded-for') ||
+                   req.headers.get('x-real-ip') ||
                    'unknown'
-  
+
   const now = Date.now()
   const windowStart = Math.floor(now / WINDOW_MS) * WINDOW_MS
-  
+
   if (!rateLimitMap.has(clientIP)) {
     rateLimitMap.set(clientIP, { count: 1, resetTime: windowStart + WINDOW_MS })
   } else {
     const record = rateLimitMap.get(clientIP)!
-    
+
     if (now > record.resetTime) {
       record.count = 1
       record.resetTime = windowStart + WINDOW_MS
     } else {
       record.count++
     }
-    
+
     if (record.count > RATE_LIMIT) {
       return new Response(
         JSON.stringify({
@@ -69,15 +81,15 @@ serve(async (req) => {
 
     const path =
       url.pathname.split('/treexpay-proxy')[1] || ''
-    
+
     // Se path for vazio, não adiciona fallback /payments
-    const targetUrl = path ? `${API_URL}${path}` : API_URL 
+    const targetUrl = path ? `${API_URL}${path}` : API_URL
 
     let body = null
 
     if (req.method !== 'GET') {
       body = await req.text()
-      
+
       // Sanitização básica
       if (body.length > 100000) { // 100KB limit
         return new Response(
@@ -99,7 +111,7 @@ serve(async (req) => {
         try {
           const parsedBody = JSON.parse(body);
           const amount = parsedBody?.amount;
-          
+
           if (!amount || typeof amount !== 'number' || amount < 100 || amount > 999999) {
             return new Response(
               JSON.stringify({

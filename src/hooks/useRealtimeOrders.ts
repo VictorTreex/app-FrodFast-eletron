@@ -38,6 +38,7 @@ interface OrderData {
   status?: string;
   created_at: string;
   user_id: string;
+  is_manual?: boolean;
 }
 
 interface UseRealtimeOrdersProps {

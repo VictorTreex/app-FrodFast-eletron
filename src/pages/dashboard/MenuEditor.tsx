@@ -76,6 +76,7 @@ interface MenuSettings {
   scheduling_max_days: number;
   birthday_promo_enabled: boolean;
   birthday_promo_percent: number;
+  birthday_promo_product_id: string | null;
 }
 
 const themeList = Object.values(MENU_THEMES);
@@ -104,7 +105,7 @@ const MenuEditor = () => {
     address: null, phone: null, opening_hours: null, delivery_time: null, is_open: true,
     business_hours: DEFAULT_HOURS, accept_delivery: false, accept_pickup: false, accept_dine_in: false,
     delivery_fee: 0, accept_scheduled: false, scheduling_min_minutes: 30, scheduling_max_days: 7,
-    birthday_promo_enabled: false, birthday_promo_percent: 10,
+    birthday_promo_enabled: false, birthday_promo_percent: 10, birthday_promo_product_id: null,
   });
 
   // Helper para obter URL segura do cardápio
@@ -1196,27 +1197,106 @@ const MenuEditor = () => {
               </div>
 
               {settings.birthday_promo_enabled && (
-                <div className="max-w-xs space-y-1.5">
-                  <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    <Percent className="h-3.5 w-3.5" />
-                    Desconto (%)
-                  </Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={settings.birthday_promo_percent}
-                    onChange={(e) => {
-                      const n = Math.max(1, Math.min(100, Number(e.target.value) || 10));
-                      setSettings({ ...settings, birthday_promo_percent: n });
-                      setInfoDirty(true);
-                    }}
-                    className="h-11 text-base font-semibold"
-                    placeholder="10"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Desconto aplicado automaticamente no total do pedido do aniversariante.
-                  </p>
+                <div className="space-y-4">
+                  {/* Percentual */}
+                  <div className="max-w-xs space-y-1.5">
+                    <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Percent className="h-3.5 w-3.5" />
+                      Desconto (%)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={settings.birthday_promo_percent}
+                      onChange={(e) => {
+                        const n = Math.max(1, Math.min(100, Number(e.target.value) || 10));
+                        setSettings({ ...settings, birthday_promo_percent: n });
+                        setInfoDirty(true);
+                      }}
+                      className="h-11 text-base font-semibold"
+                      placeholder="10"
+                    />
+                  </div>
+
+                  {/* Escopo: todos os produtos ou produto específico */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Aplicar desconto em
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setSettings({ ...settings, birthday_promo_product_id: null }); setInfoDirty(true); }}
+                        className="flex items-center gap-2.5 rounded-xl border-2 p-3 text-left text-sm font-semibold transition"
+                        style={!settings.birthday_promo_product_id
+                          ? { borderColor: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.08)", color: "hsl(var(--foreground))" }
+                          : { borderColor: "hsl(var(--border))", background: "transparent", color: "hsl(var(--foreground))" }}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg" style={{ background: "hsl(var(--muted))" }}>
+                          🛒
+                        </span>
+                        <div>
+                          <div className="font-semibold">Todo o pedido</div>
+                          <div className="text-[11px] text-muted-foreground">Desconto em todos os itens</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const firstProduct = products[0];
+                          if (firstProduct) {
+                            setSettings({ ...settings, birthday_promo_product_id: firstProduct.id });
+                            setInfoDirty(true);
+                          }
+                        }}
+                        className="flex items-center gap-2.5 rounded-xl border-2 p-3 text-left text-sm font-semibold transition"
+                        style={settings.birthday_promo_product_id
+                          ? { borderColor: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.08)", color: "hsl(var(--foreground))" }
+                          : { borderColor: "hsl(var(--border))", background: "transparent", color: "hsl(var(--foreground))" }}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg" style={{ background: "hsl(var(--muted))" }}>
+                          🎁
+                        </span>
+                        <div>
+                          <div className="font-semibold">Produto específico</div>
+                          <div className="text-[11px] text-muted-foreground">Desconto em 1 item</div>
+                        </div>
+                      </button>
+                    </div>
+
+                    {settings.birthday_promo_product_id && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Produto com desconto
+                        </Label>
+                        {products.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Nenhum produto cadastrado ainda.</p>
+                        ) : (
+                          <Select
+                            value={settings.birthday_promo_product_id}
+                            onValueChange={(v) => { setSettings({ ...settings, birthday_promo_product_id: v }); setInfoDirty(true); }}
+                          >
+                            <SelectTrigger className="h-11">
+                              <SelectValue placeholder="Escolha o produto" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {products.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name}
+                                  {p.price !== null && (
+                                    <span className="ml-2 text-xs text-muted-foreground">
+                                      R$ {Number(p.price).toFixed(2)}
+                                    </span>
+                                  )}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

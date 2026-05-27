@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, screen } = require('electron');
 
 const path = require('path');
 
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 
 const fs = require('fs');
 
@@ -389,11 +389,11 @@ const getPrinters = async () => {
 
     return new Promise((resolve, reject) => {
 
-      exec('wmic printer get name', (error, stdout) => {
+      execFile('wmic', ['printer', 'get', 'name'], (error, stdout) => {
 
         if (error) {
 
-          exec('powershell "Get-Printer | Select-Object Name"', (error2, stdout2) => {
+          execFile('powershell', ['-Command', 'Get-Printer | Select-Object Name'], (error2, stdout2) => {
 
             if (error2) {
 
@@ -458,7 +458,7 @@ async function executePrintJob(job) {
       show: false,
       width: 302,
       height: 1200,
-      webPreferences: { sandbox: false, deviceScaleFactor: 1 },
+      webPreferences: { sandbox: true, deviceScaleFactor: 1 },
     });
 
     tempHtmlPath = path.join(app.getPath('temp'), `frodfast_${Date.now()}.html`);
@@ -467,11 +467,19 @@ async function executePrintJob(job) {
 
     // Aguardar fontes e layout estabilizarem
     await printWindow.webContents.executeJavaScript('document.fonts.ready').catch(() => null);
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 500));
 
-    // Medir altura real do conteúdo em px@96dpi
-    const contentPx = await printWindow.webContents.executeJavaScript(
-      'document.documentElement.scrollHeight'
+    // Medir altura real do conteúdo pelo body (getBoundingClientRect é mais confiável
+    // que documentElement.scrollHeight que pode incluir altura do viewport)
+    const contentPx = await printWindow.webContents.executeJavaScript(`
+      (() => {
+        const body = document.body;
+        const byRect = body.getBoundingClientRect().height;
+        const byOffset = body.offsetHeight;
+        const h = Math.max(byRect || 0, byOffset || 0);
+        console.log('[PRINT] Altura medida - rect:', byRect, 'offset:', byOffset, 'usado:', h);
+        return Math.ceil(h) || 600;
+      })()`
     );
 
     // Converter para polegadas: 25.4mm = 1 pol; 96px = 1 pol
@@ -501,8 +509,9 @@ async function executePrintJob(job) {
     console.log('[PRINT] Impressora:', selectedPrinter || '(padrão do sistema)');
 
     // Imprimir PDF via pdf-to-printer (usa SumatraPDF no Windows)
+    // scale: 'noscale' — imprime o PDF no tamanho exato sem redimensionar para o papel configurado
     const pdfToPrinter = require('pdf-to-printer');
-    const printOptions = {};
+    const printOptions = { scale: 'noscale' };
     if (selectedPrinter) printOptions.printer = selectedPrinter;
     await pdfToPrinter.print(tempPdfPath, printOptions);
 
@@ -590,7 +599,7 @@ function createWindow() {
 
       allowRunningInsecureContent: false,
 
-      sandbox: false
+      sandbox: true
 
     }
 
